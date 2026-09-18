@@ -1,0 +1,147 @@
+"""离线空间分类与最近距离分析；距离为图斑边界/内部到地物的最短距离。"""
+import json
+import re
+
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+from pyproj import CRS
+from shapely.strtree import STRtree
+
+OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
+PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
+
+
+def _value(value):
+    if value is None or (not isinstance(value, (dict, list)) and pd.isna(value)):
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"", "null", "none", "nan"} else text
+
+
+def classify_features(frame):
+    """标准字段优先，同时兼容大小写、osm_ 前缀、tags 和 other_tags。"""
+    types, subtypes = [], []
+    for row in frame.drop(columns=frame.geometry.name).to_dict("records"):
+        tags = {}
+        for key, value in row.items():
+            name = str(key).strip().lower()
+            if name in {"tags", "other_tags"}:
+                if isinstance(value, dict):
+                    tags.update({str(k).lower(): _value(v) for k, v in value.items()})
+                elif isinstance(value, str):
+                    try:
+                        parsed = json.loads(value)
+                        if isinstance(parsed, dict):
+                            tags.update({str(k).lower(): _value(v) for k, v in parsed.items()})
+                    except ValueError:
+                        tags.update(re.findall(r'"([^"]+)"\s*=>\s*"([^"]*)"', value))
+        for key, value in row.items():
+            name = str(key).strip().lower().removeprefix("osm_")
+            if name in {"railway", "highway", "place", "landuse"} and _value(value):
+                tags[name] = _value(value)
+        if tags.get("railway"):
+            kind, subtype = "铁路", tags["railway"]
+        elif tags.get("highway"):
+            kind, subtype = "公路", tags["highway"]
+        elif tags.get("place", "").lower() in {"village", "hamlet", "town"}:
+            kind, subtype = "村庄", tags["place"]
+        elif tags.get("landuse", "").lower() == "residential":
+            kind, subtype = "村庄", "residential"
+        else:
+            kind, subtype = "", ""
+        types.append(kind)
+        subtypes.append(subtype)
+    result = frame[[frame.geometry.name]].copy()
+    result["位置类型"], result["地物子类"] = types, subtypes
+    return result.loc[result["位置类型"] != ""].reset_index(drop=True)
+
+
+def validate_geometry(frame, farmland=False):
+    if frame.empty:
+        raise ValueError("矢量文件中没有地物。")
+    if frame.crs is None:
+        raise ValueError("缺少坐标系信息，请补充正确的 .prj 或 GeoJSON CRS 后重试。")
+    bad = frame.geometry.isna() | frame.geometry.is_empty | ~frame.geometry.is_valid
+    if bad.any():
+        raise ValueError(f"发现 {int(bad.sum())} 个空或无效几何，请在 GIS 软件中修复后重试。")
+    allowed = {"Polygon", "MultiPolygon"} if farmland else {
+        "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"
+    }
+    if not frame.geom_type.isin(allowed).all():
+        raise ValueError("耕地图斑必须全部为 Polygon / MultiPolygon。" if farmland else "OSM 数据包含不支持的几何类型。")
+    if not np.isfinite(frame.total_bounds).all():
+        raise ValueError("几何坐标存在非有限值。")
+
+
+def _project(frame, crs):
+    projected = frame.to_crs(crs)
+    if not np.isfinite(projected.total_bounds).all() or not projected.geometry.is_valid.all():
+        raise ValueError("坐标投影产生无效坐标。")
+    return projected
+
+
+def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
+    validate_geometry(farmland, farmland=True)
+    validate_geometry(features)
+    if threshold is not None and (not np.isfinite(threshold) or threshold < 0):
+        raise ValueError("最大距离阈值必须为非负有限数值。")
+    if chunk_size < 1:
+        raise ValueError("分块大小必须大于零。")
+    collisions = set(OUTPUT_FIELDS).intersection(farmland.columns)
+    if collisions:
+        raise ValueError(f"输入已含输出字段：{'、'.join(sorted(collisions))}，请先重命名以免覆盖原属性。")
+    warnings = []
+    try:
+        result = _project(farmland, 4326).reset_index(drop=True)
+    except Exception as exc:
+        raise ValueError("无法转换到 WGS84，请检查源坐标系定义。") from exc
+    west, south, east, north = result.total_bounds
+    if west < -180 or east > 180 or south < -90 or north > 90:
+        raise ValueError("WGS84 坐标超出经纬度范围，请检查源坐标系。")
+    if east - west > 6 or north - south > 8:
+        warnings.append("数据跨度较大，单一局部投影可能存在明显距离偏差，建议按地区分批分析。")
+    try:
+        metric_crs = result.estimate_utm_crs()
+        if metric_crs is None:
+            raise ValueError("无法确定 UTM 带")
+        land_m, osm_m = _project(result, metric_crs), _project(features, metric_crs)
+    except Exception:
+        # WGS84 经纬度不是米；回退到基于 WGS84 的局部等距投影。
+        try:
+            metric_crs = CRS.from_proj4(
+                f"+proj=aeqd +lat_0={(south+north)/2} +lon_0={(west+east)/2} +datum=WGS84 +units=m"
+            )
+            land_m, osm_m = _project(result, metric_crs), _project(features, metric_crs)
+        except Exception as exc:
+            raise ValueError("UTM 和 WGS84 局部近似投影均失败，请检查数据坐标系及范围。") from exc
+        warnings.append("UTM 投影失败，已回退到基于 WGS84 的局部等距投影；距离为近似值，可能存在偏差。")
+    tree = STRtree(osm_m.geometry.to_numpy())
+    records = []
+    for start in range(0, len(land_m), chunk_size):
+        geometries = land_m.geometry.iloc[start:start + chunk_size].to_numpy()
+        pairs, distances = tree.query_nearest(geometries, return_distance=True, all_matches=True)
+        # 同距离按铁路、公路、村庄排序，然后按输入顺序稳定选择。
+        candidates = pd.DataFrame({"parcel": pairs[0], "feature": pairs[1], "distance": distances})
+        candidates["priority"] = osm_m["位置类型"].iloc[pairs[1]].map(PRIORITY).to_numpy()
+        chosen = candidates.sort_values(["parcel", "distance", "priority", "feature"]).drop_duplicates("parcel")
+        for item in chosen.itertuples():
+            feature = osm_m.iloc[item.feature]
+            kind, subtype = feature["位置类型"], feature["地物子类"]
+            distance = float(item.distance)
+            if threshold is not None and distance > threshold:
+                kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
+            else:
+                relation = "周边" if kind == "村庄" else "边"
+                description = f"位于{kind}（{subtype}）{relation}，最近距离约 {distance:.2f} 米"
+            records.append((kind, subtype, round(distance, 2), description))
+        if progress:
+            progress(min(start + chunk_size, len(land_m)) / len(land_m))
+    result[OUTPUT_FIELDS] = pd.DataFrame(records, columns=OUTPUT_FIELDS, index=result.index)
+    return result, warnings, metric_crs.to_string()
+
+
+def summarize(result):
+    return result.groupby("位置类型", sort=False).agg(
+        地块数=("位置类型", "size"), 平均距离_米=("最近距离", "mean")
+    ).round(2).reset_index()
