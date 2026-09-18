@@ -2,6 +2,12 @@
 
 Python 3.10+ / Streamlit，上传耕地和 OSM 矢量，计算每个图斑到最近公路、铁路或村庄的最短距离，导出 WGS84 GeoJSON 与 Shapefile。
 
+## 在线使用
+
+访问 https://farmland-osm-roxy.streamlit.app/ ，无需在本机安装 Python。应用部署在 Streamlit Community Cloud，数据上传至该托管服务器处理。
+
+`tests/fixtures/farmland.geojson` 和 `tests/fixtures/osm.geojson` 是人工构造的两个地块及路网示例，可用于试用；最近距离应分别为 10 米和 80 米，启用 50 米阈值后第二块应标为“无”。
+
 ## 本地运行
 
 在本项目目录执行（需先安装 Python 3.10+）：
