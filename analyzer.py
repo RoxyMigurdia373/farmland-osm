@@ -13,11 +13,11 @@ from shapely.ops import unary_union
 OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
 PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
 ROAD_TYPES_ZH = {
-    "motorway": "高速公路", "motorway_link": "公路",
-    "trunk": "干线公路", "trunk_link": "公路",
-    "primary": "主要公路", "primary_link": "公路",
-    "secondary": "次要公路", "secondary_link": "公路",
-    "tertiary": "一般公路", "tertiary_link": "公路",
+    "motorway": "高速公路", "motorway_link": "高速公路",
+    "trunk": "干线公路", "trunk_link": "干线公路",
+    "primary": "主要公路", "primary_link": "主要公路",
+    "secondary": "次要公路", "secondary_link": "次要公路",
+    "tertiary": "一般公路", "tertiary_link": "一般公路",
     "unclassified": "未分级公路", "residential": "居民区道路",
     "service": "服务道路", "living_street": "生活街道",
     "road": "类别未明确的道路", "busway": "公交专用道路",
