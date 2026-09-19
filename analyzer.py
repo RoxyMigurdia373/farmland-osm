@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from pyproj import CRS
 from shapely.strtree import STRtree
+from shapely import make_valid, get_coordinates
+from shapely.ops import unary_union
 
 OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
 PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
@@ -57,6 +59,54 @@ def classify_features(frame):
     return result.loc[result["位置类型"] != ""].reset_index(drop=True)
 
 
+def repair_geometry(frame, farmland=False):
+    """保留行属性及顺序，面修复后只保留面部分，不虚构空几何。"""
+    if frame.crs is None:
+        raise ValueError("缺少坐标系信息，自动修复不能补充坐标系。")
+    allowed = {"Polygon", "MultiPolygon"} if farmland else {
+        "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"
+    }
+    positions, geometries, issues = [], [], []
+    repaired = 0
+
+    def polygons(geometry):
+        if geometry.geom_type == "Polygon":
+            return [geometry]
+        return [p for part in getattr(geometry, "geoms", []) for p in polygons(part)]
+
+    for position, geometry in enumerate(frame.geometry):
+        reason, changed = "", False
+        if geometry is None or geometry.is_empty:
+            reason = "空几何，无法恢复坐标"
+        elif not np.isfinite(get_coordinates(geometry)).all():
+            reason = "坐标含非有限值，无法可靠修复"
+        else:
+            try:
+                if not geometry.is_valid:
+                    geometry = make_valid(geometry)
+                    changed = True
+                if farmland and geometry.geom_type in {"GeometryCollection", "MultiPolygon"}:
+                    geometry = unary_union(polygons(geometry))
+                    changed = True
+                if geometry.is_empty or geometry.geom_type not in allowed or not geometry.is_valid:
+                    reason = "修复后无可用面几何" if farmland else "修复后几何为空、无效或类型不支持"
+            except Exception:
+                reason = "几何修复失败"
+        if reason:
+            issues.append({"原始行号": position + 1, "处理": "跳过", "说明": reason})
+            continue
+        if changed:
+            repaired += 1
+            issues.append({"原始行号": position + 1, "处理": "已修复", "说明": "已修复拓扑或提取面部分，请复核形状"})
+        positions.append(position)
+        geometries.append(geometry)
+    output = frame.iloc[positions].copy()
+    output.geometry = gpd.GeoSeries(geometries, index=output.index, crs=frame.crs)
+    return output.reset_index(drop=True), {
+        "输入数": len(frame), "修复数": repaired, "跳过数": len(frame) - len(output), "保留数": len(output)
+    }, issues
+
+
 def validate_geometry(frame, farmland=False):
     if frame.empty:
         raise ValueError("矢量文件中没有地物。")
@@ -64,7 +114,7 @@ def validate_geometry(frame, farmland=False):
         raise ValueError("缺少坐标系信息，请补充正确的 .prj 或 GeoJSON CRS 后重试。")
     bad = frame.geometry.isna() | frame.geometry.is_empty | ~frame.geometry.is_valid
     if bad.any():
-        raise ValueError(f"发现 {int(bad.sum())} 个空或无效几何，请在 GIS 软件中修复后重试。")
+        raise ValueError(f"发现 {int(bad.sum())} 个空或无效几何，请勾选侧边栏“自动修复无效几何”后重试，或在 GIS 软件中修复。")
     allowed = {"Polygon", "MultiPolygon"} if farmland else {
         "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"
     }
