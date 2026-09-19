@@ -12,6 +12,19 @@ from shapely.ops import unary_union
 
 OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
 PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
+ROAD_TYPES_ZH = {
+    "motorway": "高速公路", "motorway_link": "高速公路连接线",
+    "trunk": "干线公路", "trunk_link": "干线公路连接线",
+    "primary": "主要公路", "primary_link": "主要公路连接线",
+    "secondary": "次要公路", "secondary_link": "次要公路连接线",
+    "tertiary": "一般公路", "tertiary_link": "一般公路连接线",
+    "unclassified": "未分级公路", "residential": "居民区道路",
+    "service": "服务道路", "track": "农林作业道路", "living_street": "生活街道",
+    "road": "类别未明确的道路", "pedestrian": "步行街", "footway": "人行道",
+    "path": "小径", "cycleway": "自行车道", "bridleway": "马道",
+    "steps": "阶梯道路", "construction": "在建道路", "proposed": "规划道路",
+    "busway": "公交专用道路", "bus_guideway": "导向公交专用道路",
+}
 
 
 def _value(value):
@@ -187,9 +200,10 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
                 relation = "周边" if kind == "村庄" else "边"
                 label = kind
                 if kind == "公路":
+                    label = ROAD_TYPES_ZH.get(str(subtype).strip().lower(), "类别未明确的道路")
                     road_name = _value(feature.get("地物名称"))
                     if road_name:
-                        label = road_name if road_name.endswith(("路", "道", "街", "巷", "高速")) else f"{road_name}公路"
+                        label = f"{label}（{road_name}）"
                 description = f"位于{label}{relation}，最近距离约 {distance:.2f} 米"
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
