@@ -55,7 +55,7 @@ UTM 失败后回退到以数据范围中心建立的 **WGS84 局部等距投影�
 | 最近距离 | near_m | 米，四舍五入至两位小数 |
 | 位置描述 | loc_desc | 中文描述 |
 
-位置描述细分道路中文类型，不含具体路名或英文类型。motorway 为“高速公路”、trunk 为“干线公路”、primary 为“主要公路”、secondary 为“次要公路”、tertiary 为“一般公路”，对应的 _link 类型分别加“连接线”；unclassified 为“未分级公路”、residential 为“居民区道路”、service 为“服务道路”、living_street 为“生活街道”。例如“位于主要公路边，最近距离约 10.00 米”。track 及 track_grade1–5 写“位于农林道路边”；footway/path/steps/pedestrian 写“位于步行道路边”。自行车道、马道、在建及规划道路单独表述，未知类型写“类别未明确的道路”。OSM 分类不能直接认定为国道、省道或一级、二级公路技术等级。“位置类型”仍保留公路/铁路/村庄大类，原始 OSM 类型保留在“地物子类”。铁路、村庄分别写“位于铁路边”“位于村庄周边”。
+位置描述细分道路中文类型，不含具体路名或英文类型。motorway 为“高速公路”、trunk 为“干线公路”、primary 为“主要公路”、secondary 为“次要公路”、tertiary 为“一般公路”，所有 _link 连接线类型统一写“位于公路边”，不细分连接线；unclassified 为“未分级公路”、residential 为“居民区道路”、service 为“服务道路”、living_street 为“生活街道”。例如“位于主要公路边，最近距离约 10.00 米”。track 及 track_grade1–5 写“位于农林道路边”；footway/path/steps/pedestrian 写“位于步行道路边”。自行车道、马道、在建及规划道路单独表述，未知类型写“类别未明确的道路”。OSM 分类不能直接认定为国道、省道或一级、二级公路技术等级。“位置类型”仍保留公路/铁路/村庄大类，原始 OSM 类型保留在“地物子类”。铁路、村庄分别写“位于铁路边”“位于村庄周边”。
 
 GeoJSON 使用 UTF-8、EPSG:4326。JSON 数字可能省略尾随 0，但数值已保留两位小数精度。Shapefile ZIP 包含 `.shp/.shx/.dbf/.prj/.cpg` 及 `字段映射.json`。DBF 字段名限制为 10 字节，中文/超长/冲突原字段会映射为短名。复杂属性序列化为 JSON 字符串，日期时间转为文本。DBF 单文本最多 254 字节，超过时明确停止 Shapefile 导出，GeoJSON 仍可下载，避免静默截断。Shapefile 本身不能完整保留所有原始字段类型，保真优先选择 GeoJSON。
 
