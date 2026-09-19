@@ -202,12 +202,19 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
                 kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
             elif kind == "公路":
                 label = ROAD_TYPES_ZH.get(str(subtype).strip().lower(), "公路")
-                description = f"位于{label}{side}约{distance:.2f}米"
+                description = f"位于{label}{side}" if distance <= 0.005 else f"位于{label}{side}约{distance:.2f}米"
             elif kind == "铁路":
-                description = f"位于铁路{side}约{distance:.2f}米"
+                description = f"位于铁路{side}" if distance <= 0.005 else f"位于铁路{side}约{distance:.2f}米"
             else:
                 village = _value(feature.get("地物名称"))
-                description = (f"紧邻{village}居民点{side}约{distance:.2f}米" if village else f"村庄周边约{distance:.2f}米")
+                if village and distance <= 0.005:
+                    description = f"紧邻{village}居民点{side}"
+                elif village:
+                    description = f"紧邻{village}居民点{side}约{distance:.2f}米"
+                elif distance <= 0.005:
+                    description = "村庄周边"
+                else:
+                    description = f"村庄周边约{distance:.2f}米"
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
             progress(min(start + chunk_size, len(land_m)) / len(land_m))
