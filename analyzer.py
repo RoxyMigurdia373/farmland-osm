@@ -13,19 +13,13 @@ from shapely.ops import unary_union
 OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
 PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
 ROAD_TYPES_ZH = {
-    "motorway": "高速公路", "motorway_link": "高速公路",
-    "trunk": "干线公路", "trunk_link": "干线公路",
-    "primary": "主要公路", "primary_link": "主要公路",
-    "secondary": "次要公路", "secondary_link": "次要公路",
-    "tertiary": "一般公路", "tertiary_link": "一般公路",
-    "unclassified": "未分级公路", "residential": "居民区道路",
-    "service": "服务道路", "living_street": "生活街道",
-    "road": "类别未明确的道路", "busway": "公交专用道路",
-    "bus_guideway": "导向公交专用道路",
+    "motorway": "高速公路", "motorway_link": "高速公路", "trunk": "快速路", "trunk_link": "快速路",
+    "primary": "主干道", "primary_link": "主干道", "secondary": "县道", "secondary_link": "县道",
+    "tertiary": "乡道", "tertiary_link": "乡道", "unclassified": "村道", "residential": "村内道路",
+    "service": "专用道路", "living_street": "村内道路", "road": "公路", "busway": "快速路", "bus_guideway": "快速路",
+    "track": "机耕道/生产路", "track_grade1": "机耕道/生产路", "track_grade2": "机耕道/生产路", "track_grade3": "机耕道/生产路", "track_grade4": "机耕道/生产路", "track_grade5": "机耕道/生产路",
+    "path": "田间小路", "footway": "人行道", "cycleway": "非机动车道", "steps": "人行道", "pedestrian": "人行道", "bridleway": "田间小路", "construction": "公路", "proposed": "公路",
 }
-ROAD_TYPES_ZH.update(dict.fromkeys({"track", "track_grade1", "track_grade2", "track_grade3", "track_grade4", "track_grade5"}, "农林道路"))
-ROAD_TYPES_ZH.update(dict.fromkeys({"footway", "path", "steps", "pedestrian"}, "步行道路"))
-ROAD_TYPES_ZH.update({"cycleway": "自行车道", "bridleway": "马道", "construction": "在建道路", "proposed": "规划道路"})
 
 
 def _value(value):
@@ -33,6 +27,14 @@ def _value(value):
         return ""
     text = str(value).strip()
     return "" if text.lower() in {"", "null", "none", "nan"} else text
+
+
+def _side(parcel, feature):
+    dx = parcel.centroid.x - feature.centroid.x
+    dy = parcel.centroid.y - feature.centroid.y
+    if abs(dx) >= abs(dy):
+        return "东侧" if dx >= 0 else "西侧"
+    return "北侧" if dy >= 0 else "南侧"
 
 
 def classify_features(frame):
@@ -195,14 +197,17 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
             feature = osm_m.iloc[item.feature]
             kind, subtype = feature["位置类型"], feature["地物子类"]
             distance = float(item.distance)
+            side = _side(land_m.geometry.iloc[start + item.parcel], feature.geometry)
             if threshold is not None and distance > threshold:
                 kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
+            elif kind == "公路":
+                label = ROAD_TYPES_ZH.get(str(subtype).strip().lower(), "公路")
+                description = f"位于{label}{side}约{distance:.2f}米"
+            elif kind == "铁路":
+                description = f"位于铁路{side}约{distance:.2f}米"
             else:
-                relation = "周边" if kind == "村庄" else "边"
-                label = kind
-                if kind == "公路":
-                    label = ROAD_TYPES_ZH.get(str(subtype).strip().lower(), "类别未明确的道路")
-                description = f"位于{label}{relation}，最近距离约 {distance:.2f} 米"
+                village = _value(feature.get("地物名称"))
+                description = (f"紧邻{village}居民点{side}约{distance:.2f}米" if village else f"村庄周边约{distance:.2f}米")
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
             progress(min(start + chunk_size, len(land_m)) / len(land_m))
