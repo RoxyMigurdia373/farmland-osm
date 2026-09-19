@@ -23,7 +23,7 @@ def _value(value):
 
 def classify_features(frame):
     """标准字段优先，同时兼容大小写、osm_ 前缀、tags 和 other_tags。"""
-    types, subtypes = [], []
+    types, subtypes, names = [], [], []
     for row in frame.drop(columns=frame.geometry.name).to_dict("records"):
         tags = {}
         for key, value in row.items():
@@ -40,7 +40,7 @@ def classify_features(frame):
                         tags.update(re.findall(r'"([^"]+)"\s*=>\s*"([^"]*)"', value))
         for key, value in row.items():
             name = str(key).strip().lower().removeprefix("osm_")
-            if name in {"railway", "highway", "place", "landuse"} and _value(value):
+            if name in {"railway", "highway", "place", "landuse", "name", "name:zh", "name_zh"} and _value(value):
                 tags[name] = _value(value)
         if tags.get("railway"):
             kind, subtype = "铁路", tags["railway"]
@@ -54,8 +54,10 @@ def classify_features(frame):
             kind, subtype = "", ""
         types.append(kind)
         subtypes.append(subtype)
+        names.append(tags.get("name:zh") or tags.get("name_zh") or tags.get("name") or "")
     result = frame[[frame.geometry.name]].copy()
     result["位置类型"], result["地物子类"] = types, subtypes
+    result["地物名称"] = names
     return result.loc[result["位置类型"] != ""].reset_index(drop=True)
 
 
@@ -183,7 +185,12 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
                 kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
             else:
                 relation = "周边" if kind == "村庄" else "边"
-                description = f"位于{kind}（{subtype}）{relation}，最近距离约 {distance:.2f} 米"
+                label = kind
+                if kind == "公路":
+                    road_name = _value(feature.get("地物名称"))
+                    if road_name:
+                        label = road_name if road_name.endswith(("路", "道", "街", "巷", "高速")) else f"{road_name}公路"
+                description = f"位于{label}{relation}，最近距离约 {distance:.2f} 米"
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
             progress(min(start + chunk_size, len(land_m)) / len(land_m))
