@@ -12,11 +12,17 @@ from shapely.ops import unary_union
 
 OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
 PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
-ROAD_TYPES_ZH = dict.fromkeys({
-    "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
-    "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified",
-    "residential", "service", "living_street", "road", "busway", "bus_guideway",
-}, "公路")
+ROAD_TYPES_ZH = {
+    "motorway": "高速公路", "motorway_link": "高速公路连接线",
+    "trunk": "干线公路", "trunk_link": "干线公路连接线",
+    "primary": "主要公路", "primary_link": "主要公路连接线",
+    "secondary": "次要公路", "secondary_link": "次要公路连接线",
+    "tertiary": "一般公路", "tertiary_link": "一般公路连接线",
+    "unclassified": "未分级公路", "residential": "居民区道路",
+    "service": "服务道路", "living_street": "生活街道",
+    "road": "类别未明确的道路", "busway": "公交专用道路",
+    "bus_guideway": "导向公交专用道路",
+}
 ROAD_TYPES_ZH.update(dict.fromkeys({"track", "track_grade1", "track_grade2", "track_grade3", "track_grade4", "track_grade5"}, "农林道路"))
 ROAD_TYPES_ZH.update(dict.fromkeys({"footway", "path", "steps", "pedestrian"}, "步行道路"))
 ROAD_TYPES_ZH.update({"cycleway": "自行车道", "bridleway": "马道", "construction": "在建道路", "proposed": "规划道路"})
