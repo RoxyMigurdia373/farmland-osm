@@ -3,7 +3,7 @@ import pandas as pd
 
 import streamlit as st
 
-from analyzer import OUTPUT_FIELDS, analyze, classify_features, summarize, validate_geometry, repair_geometry
+from analyzer import OUTPUT_FIELDS, ROAD_TYPES_ZH, analyze, classify_features, summarize, validate_geometry, repair_geometry
 from io_utils import combine_frames, export_geojson, export_shapefile, read_vector
 
 st.set_page_config(page_title="耕地地块周边地物分析工具", page_icon="🌾", layout="wide")
@@ -25,6 +25,78 @@ with st.sidebar:
     st.caption("Shapefile 下载采用短英文列名，压缩包内含中文字段映射。")
     auto_repair = st.checkbox("自动修复无效几何", value=True, on_change=clear_result)
     st.caption("尝试修复自相交等问题；空几何和无法修复的记录会跳过，不进入结果。修复可能改变形状，请复核处理明细。")
+
+with st.expander("上传数据要求与分类规则（首次使用请阅读）", expanded=True):
+    input_tab, class_tab, result_tab = st.tabs(["文件与字段要求", "道路分类对照", "分析与结果规则"])
+    with input_tab:
+        st.markdown("""
+**使用步骤：**上传耕地图斑 → 上传道路、铁路或村庄地物 → 按需设置距离阈值 → 开始分析 → 下载结果。
+
+| 上传项 | 文件格式 | 几何与属性要求 |
+| --- | --- | --- |
+| 耕地图斑（一个文件） | Shapefile ZIP、GeoJSON / JSON | 必须为 Polygon / MultiPolygon 面；无必填属性字段，保留原属性 |
+| 周边地物（可多文件） | Shapefile ZIP、GeoJSON / JSON | 支持点、线、面及其 Multi 类型；须有下表中的分类属性 |
+
+**Shapefile 打包：**每套数据必须包含同名 `.shp`、`.shx`、`.dbf`、`.prj`，建议带 `.cpg` 声明中文编码。
+例如 `路网.shp`、`路网.shx`、`路网.dbf`、`路网.prj`、`路网.cpg` 一起压缩为 `路网.zip`，不能只压缩 `.shp`。
+ZIP 可含子目录或多套图层，程序会合并。单文件上传上限 500 MB；ZIP 解压后上限 2 GB、最多 10000 个文件。
+
+**坐标系：**必须正确声明源坐标系；标准 GeoJSON 使用 WGS84 经纬度。不同文件可以使用不同坐标系，工具会统一投影。不能只改坐标系标签而不转换坐标。
+
+**分类字段不是全部必填，满足一行条件即可；按以下顺序判断同一条地物：**
+
+| 优先级 | 字段 | 有效内容示例 / 条件 | 归类 |
+| --- | --- | --- | --- |
+| 1 | `railway` | 有值，例如 `rail` | 铁路 |
+| 2 | `highway` | 有值，例如 `tertiary`、`residential` | 公路（中文细分类见下一页） |
+| 3 | `place` | 仅 `village`、`hamlet`、`town` | 村庄 |
+| 4 | `landuse` | 仅 `residential` | 村庄 |
+
+不匹配的地物会忽略，全部不匹配时停止分析。字段名兼容大小写、前后空格、`osm_` 前缀，也可读取 `tags` / `other_tags` 中的标准标签。
+`railway` / `highway` 按“有值”判断，`no`、`0` 等也会被当作类型，请提前清理不适用的值。
+
+**只有 `fclass` 怎么办？**目前不会直接按 `fclass`、`type` 或中文“道路类型”识别。
+若是纯路网，且 `fclass` 值是 `motorway`、`primary`、`tertiary` 等 OSM 道路类型，可新增文本字段 `highway` 并复制对应值；混合图层请按地物分别填写相应分类字段。
+
+**村庄名称（可选）：**按 `name:zh` → `name_zh` → `name` 优先读取，用于“紧邻XX村居民点…”；没有名称时写“村庄周边”。道路描述不显示具体路名。
+
+**耕地原字段限制：**不能已有 `位置类型`、`地物子类`、`最近距离`、`位置描述`，请先重命名，避免覆盖原属性。
+""")
+    with class_tab:
+        st.markdown("按项目约定将 `highway` 值转换为以下中文名称。连接线归入对应大类，不显示具体路名或英文类型。")
+        st.table(pd.DataFrame([
+            {"highway 值": key, "描述中的名称": value}
+            for key, value in ROAD_TYPES_ZH.items()
+        ]))
+        st.caption("未列出的 highway 值统一表述为“公路”。这是本项目的名称映射，不是对国道、省道或公路技术等级的法定认定。")
+    with result_tab:
+        st.markdown("""
+**几何修复：**侧边栏默认开启“自动修复无效几何”。修复自相交等问题，空几何、无法修复或不符合几何类型要求的记录会跳过，不进入结果。
+页面显示各文件修复及跳过数量，可下载处理明细；行号从 1 开始，多图层 ZIP 按合并顺序编号。修复可能改变形状和面积，请复核。关闭修复后会严格校验并报错。
+
+**最近地物：**对整个图斑与地物计算最短距离，而不是中心点距离。相交、接触或包含时距离为 0。
+以米制 UTM 投影计算；失败时尝试 WGS84 局部等距投影并提示。大范围数据建议分地区分析。距离完全相同时优先铁路，其次公路，再次村庄。
+
+**方位：**使用投影坐标中“地物中心 → 图斑中心”的主方向，分东、西、南、北侧。
+这是中心相对方位，不是道路行驶方向的左/右侧；长弯曲道路、交叉或重叠图斑请人工复核。中心重合时当前按东侧处理。
+
+**距离阈值：**默认不启用；启用后，超过阈值的位置类型为“无”，描述为“不在公路、铁路或村庄周边”，仍保留实际最近距离。
+“紧邻”是描述模板用语，不代表已通过额外的邻近距离判断；需限制范围时请启用阈值。
+
+| 场景 | 描述示例 |
+| --- | --- |
+| 道路 | 位于乡道东侧约85.20米 |
+| 铁路 | 位于铁路西侧约120.50米 |
+| 有村名 | 紧邻大同村居民点南侧约80.00米 |
+| 无村名 | 村庄周边约80.00米 |
+| 距离为 0 或不超过 0.005 米 | 位于乡道东侧 / 紧邻大同村居民点南侧；无村名时为“村庄周边” |
+
+**导出：**GeoJSON 和 Shapefile 均为 WGS84。新增“位置类型、地物子类、最近距离、位置描述”，距离字段始终保留数值（包括 0），原始英文类别保留在“地物子类”。
+Shapefile 使用 `loc_type`、`osm_sub`、`near_m`、`loc_desc` 短字段名，ZIP 内附中文字段映射；GeoJSON 保留中文列名。
+DBF 文本超过 254 字节时不能导出 Shapefile，请使用 GeoJSON。
+
+超过 5 万图斑时处理可能较慢；500 MB 上传上限不等于服务器内存容量，大数据建议拆分。
+""")
 
 left, right = st.columns(2)
 with left:
