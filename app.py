@@ -23,6 +23,10 @@ with st.sidebar:
                                 disabled=not enabled, on_change=clear_result)
     st.caption("超过阈值的位置类型为“无”，仍保留真实最近距离。未启用时，每个地块均匹配最近地物。")
     st.caption("Shapefile 下载采用短英文列名，压缩包内含中文字段映射。")
+    st.subheader("位置描述")
+    show_direction = st.checkbox("显示方位", value=False, on_change=clear_result)
+    show_distance = st.checkbox("显示距离", value=False, on_change=clear_result)
+    st.caption("默认仅显示“乡道旁”“村道旁”等。方位、距离可分别勾选；0 米不显示距离。距离字段与阈值判断不受影响。")
     auto_repair = st.checkbox("自动修复无效几何", value=True, on_change=clear_result)
     st.caption("尝试修复自相交等问题；空几何和无法修复的记录会跳过，不进入结果。修复可能改变形状，请复核处理明细。")
 
@@ -83,15 +87,17 @@ ZIP 可含子目录或多套图层，程序会合并。单文件上传上限 500
 这是中心相对方位，不是道路行驶方向的左/右侧；长弯曲道路、交叉或重叠图斑请人工复核。中心重合时当前按东侧处理。
 
 距离阈值：默认不启用；启用后，超过阈值的位置类型为“无”，描述为“不在公路、铁路或村庄周边”，仍保留实际最近距离。
-“紧邻”是描述模板用语，不代表已通过额外的邻近距离判断；需限制范围时请启用阈值。
+“旁”是位置描述用语；需限定邻近范围时请启用阈值，不勾选“显示距离”也仍会计算距离并判断阈值。
 
-| 场景 | 描述示例 |
+| 描述选项 | 示例 |
 | --- | --- |
-| 道路 | 位于乡道东侧约85.20米 |
-| 铁路 | 位于铁路西侧约120.50米 |
-| 有村名 | 紧邻大同村居民点南侧约80.00米 |
-| 无村名 | 村庄周边约80.00米 |
-| 距离为 0 或不超过 0.005 米 | 位于乡道东侧 / 紧邻大同村居民点南侧；无村名时为“村庄周边” |
+| 都不勾选（默认） | 乡道旁 / 村道旁 / 铁路旁 / 大同村居民点旁 |
+| 只显示方位 | 位于乡道东侧 |
+| 只显示距离 | 乡道旁约85.20米 |
+| 同时显示方位和距离 | 位于乡道东侧约85.20米 |
+| 距离为 0 或不超过 0.005 米 | 不附加距离文字，保留所选的方位或“旁”表述 |
+
+道路使用国内名称：高速公路、快速路、主干道、县道、乡道、村道、村内道路、专用道路、机耕道/生产路等，连接线归入对应大类。具体路名和英文类型不进入位置描述。
 
 导出：GeoJSON 和 Shapefile 均为 WGS84。新增“位置类型、地物子类、最近距离、位置描述”，距离字段始终保留数值（包括 0），原始英文类别保留在“地物子类”。
 Shapefile 使用 `loc_type`、`osm_sub`、`near_m`、`loc_desc` 短字段名，ZIP 内附中文字段映射；GeoJSON 保留中文列名。
@@ -147,7 +153,8 @@ if st.button("开始分析", type="primary", disabled=farmland_upload is None or
             features = combine_frames(classified)
             st.write(f"识别到 {len(features):,} 个公路、铁路或村庄地物，开始空间分析…")
             bar = st.progress(0.0)
-            result, warnings, crs = analyze(farmland, features, threshold if enabled else None, bar.progress)
+            result, warnings, crs = analyze(farmland, features, threshold if enabled else None, bar.progress,
+                                              show_direction=show_direction, show_distance=show_distance)
             st.write("正在生成下载文件…")
             geojson = export_geojson(result)
             shp = None

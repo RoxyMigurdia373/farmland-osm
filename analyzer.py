@@ -149,7 +149,8 @@ def _project(frame, crs):
     return projected
 
 
-def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
+def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
+            show_direction=False, show_distance=False):
     validate_geometry(farmland, farmland=True)
     validate_geometry(features)
     if threshold is not None and (not np.isfinite(threshold) or threshold < 0):
@@ -197,24 +198,23 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000):
             feature = osm_m.iloc[item.feature]
             kind, subtype = feature["位置类型"], feature["地物子类"]
             distance = float(item.distance)
-            side = _side(land_m.geometry.iloc[start + item.parcel], feature.geometry)
             if threshold is not None and distance > threshold:
                 kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
-            elif kind == "公路":
-                label = ROAD_TYPES_ZH.get(str(subtype).strip().lower(), "公路")
-                description = f"位于{label}{side}" if distance <= 0.005 else f"位于{label}{side}约{distance:.2f}米"
-            elif kind == "铁路":
-                description = f"位于铁路{side}" if distance <= 0.005 else f"位于铁路{side}约{distance:.2f}米"
             else:
-                village = _value(feature.get("地物名称"))
-                if village and distance <= 0.005:
-                    description = f"紧邻{village}居民点{side}"
-                elif village:
-                    description = f"紧邻{village}居民点{side}约{distance:.2f}米"
-                elif distance <= 0.005:
-                    description = "村庄周边"
+                if kind == "公路":
+                    label = ROAD_TYPES_ZH.get(str(subtype).strip().lower(), "公路")
+                elif kind == "铁路":
+                    label = "铁路"
                 else:
-                    description = f"村庄周边约{distance:.2f}米"
+                    village = _value(feature.get("地物名称"))
+                    label = f"{village}居民点" if village else "村庄"
+                if show_direction:
+                    side = _side(land_m.geometry.iloc[start + item.parcel], feature.geometry)
+                    description = f"位于{label}{side}"
+                else:
+                    description = f"{label}旁"
+                if show_distance and distance > 0.005:
+                    description += f"约{distance:.2f}米"
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
             progress(min(start + chunk_size, len(land_m)) / len(land_m))
