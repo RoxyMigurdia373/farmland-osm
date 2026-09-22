@@ -12,7 +12,7 @@ FIELD_MAP = {"位置类型": "loc_type", "地物子类": "osm_sub", "最近距�
 MAX_EXTRACTED = 2 * 1024**3
 
 
-def read_vector(data, filename):
+def read_vector(data, filename, mask=None, transform=None):
     suffix = Path(filename).suffix.lower()
     try:
         with tempfile.TemporaryDirectory(prefix="farmland_read_") as directory:
@@ -20,7 +20,9 @@ def read_vector(data, filename):
             if suffix in {".geojson", ".json"}:
                 source = root / "input.geojson"
                 source.write_bytes(data)
-                frame = gpd.read_file(source, engine="fiona")
+                frame = gpd.read_file(source, engine="fiona", mask=mask)
+                if transform:
+                    frame = transform(frame, filename)
             elif suffix == ".zip":
                 with zipfile.ZipFile(io.BytesIO(data)) as archive:
                     members = archive.infolist()
@@ -53,7 +55,10 @@ def read_vector(data, filename):
                     missing = [ext for ext in (".shx", ".dbf", ".prj") if not source.with_suffix(ext).exists()]
                     if missing:
                         raise ValueError(f"{source.name} 缺少必要配套文件：{', '.join(missing)}")
-                    frames.append(gpd.read_file(source, engine="fiona"))
+                    layer = gpd.read_file(source, engine="fiona", mask=mask)
+                    if transform:
+                        layer = transform(layer, source.name)
+                    frames.append(layer)
                 frame = combine_frames(frames)
             else:
                 raise ValueError("仅支持 Shapefile ZIP、GeoJSON 或 JSON 文件。")

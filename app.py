@@ -5,6 +5,7 @@ import streamlit as st
 
 from analyzer import OUTPUT_FIELDS, ROAD_TYPES_ZH, analyze, classify_features, summarize, validate_geometry, repair_geometry
 from io_utils import combine_frames, export_geojson, export_shapefile, read_vector
+from materials import extraction_area, normalize_layer, extract_materials
 
 st.set_page_config(page_title="耕地地块周边地物分析工具", page_icon="🌾", layout="wide")
 st.title("耕地地块周边地物分析工具")
@@ -105,6 +106,51 @@ DBF 文本超过 254 字节时不能导出 Shapefile，请使用 GeoJSON。
 
 超过 5 万图斑时处理可能较慢；500 MB 上传上限不等于服务器内存容量，大数据建议拆分。
 """)
+
+with st.expander("第一步：从完整 OSM 数据提取分析材料", expanded=False):
+    st.write("上传村界或分析区域面，以及完整 OSM ZIP / GeoJSON。下载的分析材料可直接放入下方“上传 OSM 地物”。")
+    st.caption("Geofabrik 数据请保留 roads、railways、places、landuse 原图层名，程序会把 fclass 转为对应分类字段。普通建筑不自动当作村庄。")
+
+    def clear_materials():
+        st.session_state.pop("materials_result", None)
+
+    boundary_upload = st.file_uploader("村界 / 分析范围（面）", type=["zip", "geojson", "json"], key="boundary", on_change=clear_materials)
+    source_uploads = st.file_uploader("完整 OSM 数据（可多文件）", type=["zip", "geojson", "json"], accept_multiple_files=True, key="full_osm", on_change=clear_materials)
+    buffer_m = st.number_input("范围外扩距离（米）", min_value=0.0, max_value=100000.0, value=1000.0, step=100.0, on_change=clear_materials)
+    st.caption("默认外扩 1000 米，以保留边界外的邻近道路和村庄；建议不小于分析阈值。0 表示仅提取与范围相交的地物。保留相交地物的完整形状；范围外未提取的数据不会参与后续最近邻分析。单文件最多 500 MB，超出请按图层打包上传。")
+    if st.button("提取分析材料", disabled=boundary_upload is None or not source_uploads):
+        clear_materials()
+        try:
+            with st.spinner("正在按范围读取、分类和提取 OSM 数据…"):
+                area, boundary_report = extraction_area(read_vector(boundary_upload.getvalue(), boundary_upload.name), buffer_m)
+                frames = [read_vector(u.getvalue(), u.name, mask=area, transform=normalize_layer) for u in source_uploads]
+                extracted, counts, report = extract_materials(combine_frames(frames), area)
+                classes = classify_features(extracted, reset_index=False)
+                roads = extracted.loc[classes.index[classes["位置类型"].isin(["公路", "铁路"])]]
+                villages = extracted.loc[classes.index[classes["位置类型"].eq("村庄")]]
+                st.session_state.materials_result = (
+                    export_geojson(roads) if not roads.empty else None,
+                    export_geojson(villages) if not villages.empty else None,
+                    counts, report, boundary_report,
+                )
+        except Exception as exc:
+            st.error(f"提取失败：{exc}")
+    if "materials_result" in st.session_state:
+        roads_data, villages_data, counts, report, boundary_report = st.session_state.materials_result
+        st.success(f"已生成 {report['输出数量']:,} 条分析地物，坐标系为 WGS84。")
+        st.dataframe(counts, hide_index=True)
+        st.caption(f"范围修复 {boundary_report['修复数']} 条、跳过 {boundary_report['跳过数']} 条；地物修复 {report['修复数']} 条、跳过 {report['跳过数']} 条。")
+        road_col, village_col = st.columns(2)
+        with road_col:
+            if roads_data is not None:
+                st.download_button("下载路网材料（公路、铁路）", roads_data, "road_materials.geojson", "application/geo+json")
+            else:
+                st.info("范围内没有匹配的公路或铁路。")
+        with village_col:
+            if villages_data is not None:
+                st.download_button("下载村庄材料（居民点、居民区）", villages_data, "village_materials.geojson", "application/geo+json")
+            else:
+                st.info("范围内没有匹配的村庄或居民区。")
 
 left, right = st.columns(2)
 with left:

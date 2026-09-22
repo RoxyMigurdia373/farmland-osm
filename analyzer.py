@@ -37,7 +37,7 @@ def _side(parcel, feature):
     return "北侧" if dy >= 0 else "南侧"
 
 
-def classify_features(frame):
+def classify_features(frame, reset_index=True):
     """标准字段优先，同时兼容大小写、osm_ 前缀、tags 和 other_tags。"""
     types, subtypes, names = [], [], []
     for row in frame.drop(columns=frame.geometry.name).to_dict("records"):
@@ -74,7 +74,8 @@ def classify_features(frame):
     result = frame[[frame.geometry.name]].copy()
     result["位置类型"], result["地物子类"] = types, subtypes
     result["地物名称"] = names
-    return result.loc[result["位置类型"] != ""].reset_index(drop=True)
+    result = result.loc[result["位置类型"] != ""]
+    return result.reset_index(drop=True) if reset_index else result
 
 
 def repair_geometry(frame, farmland=False):
