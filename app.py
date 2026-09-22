@@ -129,8 +129,8 @@ with st.expander("第一步：从完整 OSM 数据提取分析材料", expanded=
                 roads = extracted.loc[classes.index[classes["位置类型"].isin(["公路", "铁路"])]]
                 villages = extracted.loc[classes.index[classes["位置类型"].eq("村庄")]]
                 st.session_state.materials_result = (
-                    export_geojson(roads) if not roads.empty else None,
-                    export_geojson(villages) if not villages.empty else None,
+                    export_shapefile(roads) if not roads.empty else None,
+                    export_shapefile(villages) if not villages.empty else None,
                     counts, report, boundary_report,
                 )
         except Exception as exc:
@@ -143,12 +143,12 @@ with st.expander("第一步：从完整 OSM 数据提取分析材料", expanded=
         road_col, village_col = st.columns(2)
         with road_col:
             if roads_data is not None:
-                st.download_button("下载路网材料（公路、铁路）", roads_data, "road_materials.geojson", "application/geo+json")
+                st.download_button("下载路网材料（Shapefile ZIP）", roads_data, "road_materials.zip", "application/zip")
             else:
                 st.info("范围内没有匹配的公路或铁路。")
         with village_col:
             if villages_data is not None:
-                st.download_button("下载村庄材料（居民点、居民区）", villages_data, "village_materials.geojson", "application/geo+json")
+                st.download_button("下载村庄材料（Shapefile ZIP）", villages_data, "village_materials.zip", "application/zip")
             else:
                 st.info("范围内没有匹配的村庄或居民区。")
 

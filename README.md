@@ -27,7 +27,7 @@ streamlit run app.py
 
 ### 完整 OSM 数据提取
 
-展开页面“第一步：从完整 OSM 数据提取分析材料”，上传村界/分析范围面（ZIP 或 GeoJSON），以及完整 OSM ZIP 或多个图层 ZIP。范围默认外扩 1000 米，可改为 0；提取与范围相交的完整地物，不截断边界。分别下载 `road_materials.geojson`（公路、铁路）和 `village_materials.geojson`（村庄点面、居民区用地），可同时上传到下方 OSM 分析入口。某类没有匹配数据时显示提示，不生成空文件。
+展开页面“第一步：从完整 OSM 数据提取分析材料”，上传村界/分析范围面（ZIP 或 GeoJSON），以及完整 OSM ZIP 或多个图层 ZIP。范围默认外扩 1000 米，可改为 0；提取与范围相交的完整地物，不截断边界。分别下载 `road_materials.zip`（公路、铁路）和 `village_materials.zip`（村庄点面、居民区用地），均为 Shapefile 压缩包，可直接上传到下方 OSM 分析入口。压缩包含 `.shp/.shx/.dbf/.prj/.cpg` 及字段映射文件；某类没有匹配数据时显示提示，不生成空文件。
 
 Geofabrik 请保留原图层名：roads 的 fclass 转为 highway，railways 转为 railway，places 转为 place，landuse 转为 landuse。只保留已有分析逻辑可识别的道路、铁路、village/hamlet/town 和 residential 用地；建筑图层不会当作村庄。保留名称和 OSM ID，输出 WGS84。一般 GeoJSON/自定义图层建议直接含标准分类字段；不含标准字段的自定义 fclass 只转换明确可识别的道路与村庄值。
 
