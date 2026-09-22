@@ -144,8 +144,24 @@ def validate_geometry(frame, farmland=False):
 
 def _project(frame, crs):
     projected = frame.to_crs(crs)
-    if not np.isfinite(projected.total_bounds).all() or not projected.geometry.is_valid.all():
+    if not np.isfinite(get_coordinates(projected.geometry.to_numpy())).all():
         raise ValueError("坐标投影产生无效坐标。")
+    # 投影的浮点误差可能使原本有效、边界近乎接触的面发生自相交。
+    # 仅修复受影响行，保留属性、顺序和记录数，不能静默丢弃地块。
+    bad = ~projected.geometry.is_valid
+    if bad.any():
+        for position in np.flatnonzero(bad.to_numpy()):
+            source = frame.geometry.iloc[position]
+            repaired = make_valid(projected.geometry.iloc[position])
+            if source.geom_type in {"Polygon", "MultiPolygon"}:
+                def parts(geom):
+                    if geom.geom_type == "Polygon":
+                        return [geom]
+                    return [p for child in getattr(geom, "geoms", []) for p in parts(child)]
+                repaired = unary_union(parts(repaired))
+            if repaired.is_empty or not repaired.is_valid:
+                raise ValueError(f"投影后第 {position + 1} 条几何修复失败。")
+            projected.iat[position, projected.columns.get_loc(projected.geometry.name)] = repaired
     return projected
 
 
@@ -161,6 +177,7 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
     if collisions:
         raise ValueError(f"输入已含输出字段：{'、'.join(sorted(collisions))}，请先重命名以免覆盖原属性。")
     warnings = []
+    warnings.append("投影后如出现自相交，会自动修复并保留记录；边界精度敏感的图斑请复核导出形状。")
     try:
         result = _project(farmland, 4326).reset_index(drop=True)
     except Exception as exc:
