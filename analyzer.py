@@ -13,10 +13,10 @@ from shapely.ops import unary_union
 OUTPUT_FIELDS = ["位置类型", "地物子类", "最近距离", "位置描述"]
 PRIORITY = {"铁路": 0, "公路": 1, "村庄": 2}
 ROAD_TYPES_ZH = {
-    "motorway": "高速公路", "motorway_link": "高速公路", "trunk": "快速路", "trunk_link": "快速路",
-    "primary": "主干道", "primary_link": "主干道", "secondary": "县道", "secondary_link": "县道",
-    "tertiary": "乡道", "tertiary_link": "乡道", "unclassified": "村道", "residential": "村内道路",
-    "service": "专用道路", "living_street": "村内道路", "road": "公路", "busway": "快速路", "bus_guideway": "快速路",
+    "motorway": "高速公路", "motorway_link": "高速公路", "trunk": "国道", "trunk_link": "国道",
+    "primary": "省道", "primary_link": "省道", "secondary": "县道", "secondary_link": "县道",
+    "tertiary": "乡道", "tertiary_link": "乡道", "unclassified": "村道", "residential": "村道",
+    "service": "专用道路", "living_street": "村道", "road": "公路", "busway": "国道", "bus_guideway": "国道",
     "track": "机耕道/生产路", "track_grade1": "机耕道/生产路", "track_grade2": "机耕道/生产路", "track_grade3": "机耕道/生产路", "track_grade4": "机耕道/生产路", "track_grade5": "机耕道/生产路",
     "path": "田间小路", "footway": "人行道", "cycleway": "非机动车道", "steps": "人行道", "pedestrian": "人行道", "bridleway": "田间小路", "construction": "公路", "proposed": "公路",
 }
@@ -167,14 +167,15 @@ def _project(frame, crs):
 
 
 def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
-            show_direction=False, show_distance=False):
+            show_direction=False, show_distance=False, dual_range=False, center_coords=False):
     validate_geometry(farmland, farmland=True)
     validate_geometry(features)
     if threshold is not None and (not np.isfinite(threshold) or threshold < 0):
         raise ValueError("最大距离阈值必须为非负有限数值。")
     if chunk_size < 1:
         raise ValueError("分块大小必须大于零。")
-    collisions = set(OUTPUT_FIELDS).intersection(farmland.columns)
+    extra_fields = ([f"{r}米{field}" for r in (200, 500) for field in OUTPUT_FIELDS] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])
+    collisions = set(OUTPUT_FIELDS + extra_fields).intersection(farmland.columns)
     if collisions:
         raise ValueError(f"输入已含输出字段：{'、'.join(sorted(collisions))}，请先重命名以免覆盖原属性。")
     warnings = []
@@ -205,6 +206,7 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
         warnings.append("UTM 投影失败，已回退到基于 WGS84 的局部等距投影；距离为近似值，可能存在偏差。")
     tree = STRtree(osm_m.geometry.to_numpy())
     records = []
+    range_records = {200: [], 500: []}
     for start in range(0, len(land_m), chunk_size):
         geometries = land_m.geometry.iloc[start:start + chunk_size].to_numpy()
         pairs, distances = tree.query_nearest(geometries, return_distance=True, all_matches=True)
@@ -216,7 +218,8 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
             feature = osm_m.iloc[item.feature]
             kind, subtype = feature["位置类型"], feature["地物子类"]
             distance = float(item.distance)
-            if threshold is not None and distance > threshold:
+            outside_threshold = threshold is not None and distance > threshold
+            if outside_threshold and not dual_range:
                 kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
             else:
                 if kind == "公路":
@@ -233,10 +236,26 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
                     description = f"{label}旁"
                 if show_distance and distance > 0.005:
                     description += f"约{distance:.2f}米"
+            if dual_range:
+                for radius in (200, 500):
+                    range_records[radius].append(
+                        (kind, subtype, round(distance, 2), description) if distance <= radius
+                        else ("无", "", None, f"{radius}米内无公路、铁路或村庄")
+                    )
+                if outside_threshold:
+                    kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
             progress(min(start + chunk_size, len(land_m)) / len(land_m))
     result[OUTPUT_FIELDS] = pd.DataFrame(records, columns=OUTPUT_FIELDS, index=result.index)
+    if dual_range:
+        for radius in (200, 500):
+            fields = [f"{radius}米{field}" for field in OUTPUT_FIELDS]
+            result[fields] = pd.DataFrame(range_records[radius], columns=fields, index=result.index)
+    if center_coords:
+        centers = gpd.GeoSeries(land_m.geometry.centroid, crs=metric_crs).to_crs(4326)
+        result["中心经度"] = centers.x.round(8).to_numpy()
+        result["中心纬度"] = centers.y.round(8).to_numpy()
     return result, warnings, metric_crs.to_string()
 
 

@@ -9,6 +9,10 @@ import geopandas as gpd
 import pandas as pd
 
 FIELD_MAP = {"位置类型": "loc_type", "地物子类": "osm_sub", "最近距离": "near_m", "位置描述": "loc_desc"}
+FIELD_MAP.update({"中心经度": "center_lon", "中心纬度": "center_lat"})
+for radius in (200, 500):
+    for field, short in [("位置类型", "type"), ("地物子类", "sub"), ("最近距离", "dist"), ("位置描述", "desc")]:
+        FIELD_MAP[f"{radius}米{field}"] = f"r{radius}_{short}"
 MAX_EXTRACTED = 2 * 1024**3
 
 

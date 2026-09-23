@@ -25,6 +25,10 @@ with st.sidebar:
     st.caption("超过阈值的位置类型为“无”，仍保留真实最近距离。未启用时，每个地块均匹配最近地物。")
     st.caption("Shapefile 下载采用短英文列名，压缩包内含中文字段映射。")
     st.subheader("位置描述")
+    position_style = st.selectbox("位置选择样式", ["单一最近地物", "双范围位置（200米 / 500米）"], on_change=clear_result)
+    dual_range = position_style.startswith("双范围")
+    center_coords = st.checkbox("输出地块中心经纬度", value=False, on_change=clear_result)
+    st.caption("双范围分别输出200米和500米内最近地物；若200米内有地物，两组会匹配同一最近地物。中心为米制投影下的面积重心，转换为WGS84十进制经纬度；凹面中心可能在面外。")
     show_direction = st.checkbox("显示方位", value=False, on_change=clear_result)
     show_distance = st.checkbox("显示距离", value=False, on_change=clear_result)
     st.caption("默认仅显示“乡道旁”“村道旁”等。方位、距离可分别勾选；0 米不显示距离。距离字段与阈值判断不受影响。")
@@ -98,7 +102,7 @@ ZIP 可含子目录或多套图层，程序会合并。单文件上传上限 500
 | 同时显示方位和距离 | 位于乡道东侧约85.20米 |
 | 距离为 0 或不超过 0.005 米 | 不附加距离文字，保留所选的方位或“旁”表述 |
 
-道路使用国内名称：高速公路、快速路、主干道、县道、乡道、村道、村内道路、专用道路、机耕道/生产路等，连接线归入对应大类。具体路名和英文类型不进入位置描述。
+道路使用国内名称：高速公路、国道、省道、县道、乡道、村道、专用道路、机耕道/生产路等，连接线归入对应大类。具体路名和英文类型不进入位置描述。
 
 导出：GeoJSON 和 Shapefile 均为 WGS84。新增“位置类型、地物子类、最近距离、位置描述”，距离字段始终保留数值（包括 0），原始英文类别保留在“地物子类”。
 Shapefile 使用 `loc_type`、`osm_sub`、`near_m`、`loc_desc` 短字段名，ZIP 内附中文字段映射；GeoJSON 保留中文列名。
@@ -202,7 +206,8 @@ if st.button("开始分析", type="primary", disabled=farmland_upload is None or
             st.write(f"识别到 {len(features):,} 个公路、铁路或村庄地物，开始空间分析…")
             bar = st.progress(0.0)
             result, warnings, crs = analyze(farmland, features, threshold if enabled else None, bar.progress,
-                                              show_direction=show_direction, show_distance=show_distance)
+                                              show_direction=show_direction, show_distance=show_distance,
+                                              dual_range=dual_range, center_coords=center_coords)
             st.write("正在生成下载文件…")
             geojson = export_geojson(result)
             shp = None
@@ -211,7 +216,7 @@ if st.button("开始分析", type="primary", disabled=farmland_upload is None or
             except Exception as exc:
                 warnings.append(f"Shapefile 导出失败，GeoJSON 仍可下载：{exc}")
             st.session_state.analysis_result = {
-                "count": len(result), "summary": summarize(result), "preview": result[OUTPUT_FIELDS].head(100),
+                "count": len(result), "summary": summarize(result), "preview": result[OUTPUT_FIELDS + ([f"{r}米{f}" for r in (200, 500) for f in OUTPUT_FIELDS] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])].head(100),
                 "geojson": geojson, "shp": shp, "warnings": warnings, "crs": crs,
                 "repair_reports": repair_reports, "repair_issues": repair_issues,
             }
