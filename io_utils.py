@@ -1,6 +1,7 @@
 """上传读取和离线导出；临时文件仅存在于当前服务器并自动清理。"""
 import io
 import json
+import re
 from pathlib import Path, PurePosixPath
 import tempfile
 import zipfile
@@ -94,12 +95,19 @@ def export_geojson(frame):
 
 def export_shapefile(frame):
     output = frame.to_crs(4326).copy()
-    mapping, used = {}, set(FIELD_MAP.values())
+    field_map = FIELD_MAP.copy()
+    for column in output.columns:
+        match = re.fullmatch(r"邻近路网（([0-9.e+\-]+)米）", str(column))
+        if match:
+            short = "near_" + match.group(1).replace(".", "p").replace("+", "").replace("-", "m")
+            if len(short) <= 10:
+                field_map[column] = short
+    mapping, used = {}, set(field_map.values())
     for i, column in enumerate(output.columns):
         if column == output.geometry.name:
             continue
-        if column in FIELD_MAP:
-            mapping[column] = FIELD_MAP[column]
+        if column in field_map:
+            mapping[column] = field_map[column]
         else:
             # DBF 限制为 10 字节；对所有不安全/冲突字段使用确定性短名。
             name = str(column)

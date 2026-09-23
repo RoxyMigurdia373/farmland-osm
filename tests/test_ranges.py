@@ -34,3 +34,19 @@ class RangeTests(unittest.TestCase):
         result, _, _ = analyze(land, classify_features(osm), dual_range=True)
         self.assertEqual(result.iloc[0]['邻近路网（200米）'], '县道、村庄')
         self.assertEqual(result.iloc[0]['邻近路网（500米）'], '县道、乡道、村庄')
+
+    def test_custom_radii(self):
+        from analyzer import normalize_radii, range_field
+        self.assertEqual(normalize_radii("300，100.5,300"), [300,100.5])
+        for bad in ["", "0", "-1", "nan", "abc"]:
+            with self.assertRaises(ValueError):
+                normalize_radii(bad)
+        land = gpd.GeoDataFrame(geometry=[box(500000,2600000,500010,2600010)], crs=32649)
+        osm = gpd.GeoDataFrame({'highway': ['primary']}, geometry=[LineString([(500210,2600000),(500210,2600010)])], crs=32649)
+        r, _, _ = analyze(land, classify_features(osm), dual_range=True, radii=[100.5,300,800])
+        self.assertEqual(r.iloc[0][range_field(100.5)], '')
+        self.assertEqual(r.iloc[0][range_field(300)], '省道')
+        self.assertEqual(r.iloc[0][range_field(800)], '省道')
+        loaded = read_vector(export_shapefile(r), 'r.zip')
+        self.assertIn('near_300', loaded)
+        self.assertIn('near_100p5', loaded)

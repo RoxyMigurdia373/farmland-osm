@@ -3,7 +3,7 @@ import pandas as pd
 
 import streamlit as st
 
-from analyzer import OUTPUT_FIELDS, ROAD_TYPES_ZH, analyze, classify_features, summarize, validate_geometry, repair_geometry
+from analyzer import OUTPUT_FIELDS, ROAD_TYPES_ZH, normalize_radii, range_field, analyze, classify_features, summarize, validate_geometry, repair_geometry
 from io_utils import combine_frames, export_geojson, export_shapefile, read_vector
 from materials import extraction_area, normalize_layer, extract_materials
 
@@ -25,10 +25,20 @@ with st.sidebar:
     st.caption("超过阈值的位置类型为“无”，仍保留真实最近距离。未启用时，每个地块均匹配最近地物。")
     st.caption("Shapefile 下载采用短英文列名，压缩包内含中文字段映射。")
     st.subheader("位置描述")
-    position_style = st.selectbox("位置选择样式", ["单一最近地物", "双范围位置（200米 / 500米）"], on_change=clear_result)
-    dual_range = position_style.startswith("双范围")
+    position_style = st.selectbox("位置选择样式", ["单一最近地物", "自定义范围汇总"], on_change=clear_result)
+    dual_range = position_style == "自定义范围汇总"
+    radii = []
+    range_error = None
+    if dual_range:
+        radius_text = st.text_input("分析范围（米，多个数值用逗号分隔）", value="200, 500", on_change=clear_result)
+        try:
+            radii = normalize_radii(radius_text)
+            st.caption("输出范围：" + "、".join(format(r, '.15g') + "米" for r in radii))
+        except ValueError as exc:
+            range_error = str(exc)
+            st.error(range_error)
     center_coords = st.checkbox("输出地块中心经纬度", value=False, on_change=clear_result)
-    st.caption("双范围汇总200米和500米内所有地物类别，去重后以顿号分隔，例如“县道、乡道、铁路、村庄”；无匹配留空。中心为米制投影下的面积重心，转换为WGS84十进制经纬度；凹面中心可能在面外。")
+    st.caption("按自定义范围汇总所有地物类别，去重后以顿号分隔，例如“县道、乡道、铁路、村庄”；无匹配留空。中心为米制投影下的面积重心，转换为WGS84十进制经纬度；凹面中心可能在面外。")
     show_direction = st.checkbox("显示方位", value=False, on_change=clear_result)
     show_distance = st.checkbox("显示距离", value=False, on_change=clear_result)
     st.caption("默认仅显示“乡道旁”“村道旁”等。方位、距离可分别勾选；0 米不显示距离。距离字段与阈值判断不受影响。")
@@ -166,7 +176,7 @@ with right:
     osm_uploads = st.file_uploader("上传 OSM 地物（可多选）", type=["zip", "geojson", "json"],
                                   accept_multiple_files=True, on_change=clear_result)
 
-if st.button("开始分析", type="primary", disabled=farmland_upload is None or not osm_uploads):
+if st.button("开始分析", type="primary", disabled=farmland_upload is None or not osm_uploads or range_error is not None):
     clear_result()
     try:
         repair_reports, repair_issues = [], []
@@ -207,7 +217,7 @@ if st.button("开始分析", type="primary", disabled=farmland_upload is None or
             bar = st.progress(0.0)
             result, warnings, crs = analyze(farmland, features, threshold if enabled else None, bar.progress,
                                               show_direction=show_direction, show_distance=show_distance,
-                                              dual_range=dual_range, center_coords=center_coords)
+                                              dual_range=dual_range, center_coords=center_coords, radii=radii)
             st.write("正在生成下载文件…")
             geojson = export_geojson(result)
             shp = None
@@ -216,7 +226,7 @@ if st.button("开始分析", type="primary", disabled=farmland_upload is None or
             except Exception as exc:
                 warnings.append(f"Shapefile 导出失败，GeoJSON 仍可下载：{exc}")
             st.session_state.analysis_result = {
-                "count": len(result), "summary": summarize(result), "preview": result[OUTPUT_FIELDS + ([f"邻近路网（{r}米）" for r in (500, 200)] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])].head(100),
+                "count": len(result), "summary": summarize(result), "preview": result[OUTPUT_FIELDS + ([range_field(r) for r in radii] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])].head(100),
                 "geojson": geojson, "shp": shp, "warnings": warnings, "crs": crs,
                 "repair_reports": repair_reports, "repair_issues": repair_issues,
             }
