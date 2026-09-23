@@ -28,7 +28,7 @@ with st.sidebar:
     position_style = st.selectbox("位置选择样式", ["单一最近地物", "双范围位置（200米 / 500米）"], on_change=clear_result)
     dual_range = position_style.startswith("双范围")
     center_coords = st.checkbox("输出地块中心经纬度", value=False, on_change=clear_result)
-    st.caption("双范围分别输出200米和500米内最近地物；若200米内有地物，两组会匹配同一最近地物。中心为米制投影下的面积重心，转换为WGS84十进制经纬度；凹面中心可能在面外。")
+    st.caption("双范围汇总200米和500米内所有地物类别，去重后以顿号分隔，例如“县道、乡道、铁路、村庄”；无匹配留空。中心为米制投影下的面积重心，转换为WGS84十进制经纬度；凹面中心可能在面外。")
     show_direction = st.checkbox("显示方位", value=False, on_change=clear_result)
     show_distance = st.checkbox("显示距离", value=False, on_change=clear_result)
     st.caption("默认仅显示“乡道旁”“村道旁”等。方位、距离可分别勾选；0 米不显示距离。距离字段与阈值判断不受影响。")
@@ -216,7 +216,7 @@ if st.button("开始分析", type="primary", disabled=farmland_upload is None or
             except Exception as exc:
                 warnings.append(f"Shapefile 导出失败，GeoJSON 仍可下载：{exc}")
             st.session_state.analysis_result = {
-                "count": len(result), "summary": summarize(result), "preview": result[OUTPUT_FIELDS + ([f"{r}米{f}" for r in (200, 500) for f in OUTPUT_FIELDS] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])].head(100),
+                "count": len(result), "summary": summarize(result), "preview": result[OUTPUT_FIELDS + ([f"邻近路网（{r}米）" for r in (500, 200)] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])].head(100),
                 "geojson": geojson, "shp": shp, "warnings": warnings, "crs": crs,
                 "repair_reports": repair_reports, "repair_issues": repair_issues,
             }

@@ -174,7 +174,7 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
         raise ValueError("最大距离阈值必须为非负有限数值。")
     if chunk_size < 1:
         raise ValueError("分块大小必须大于零。")
-    extra_fields = ([f"{r}米{field}" for r in (200, 500) for field in OUTPUT_FIELDS] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])
+    extra_fields = ([f"邻近路网（{r}米）" for r in (500, 200)] if dual_range else []) + (["中心经度", "中心纬度"] if center_coords else [])
     collisions = set(OUTPUT_FIELDS + extra_fields).intersection(farmland.columns)
     if collisions:
         raise ValueError(f"输入已含输出字段：{'、'.join(sorted(collisions))}，请先重命名以免覆盖原属性。")
@@ -207,8 +207,30 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
     tree = STRtree(osm_m.geometry.to_numpy())
     records = []
     range_records = {200: [], 500: []}
+    category_trees = {}
+    if dual_range:
+        labels = [ROAD_TYPES_ZH.get(str(row["地物子类"]).strip().lower(), "公路")
+                  if row["位置类型"] == "公路" else row["位置类型"]
+                  for _, row in osm_m.iterrows()]
+        order = list(dict.fromkeys(ROAD_TYPES_ZH.values())) + ["铁路", "村庄"]
+        for label in order:
+            positions = [i for i, value in enumerate(labels) if value == label]
+            if positions:
+                category_trees[label] = STRtree(osm_m.geometry.iloc[positions].to_numpy())
     for start in range(0, len(land_m), chunk_size):
         geometries = land_m.geometry.iloc[start:start + chunk_size].to_numpy()
+        if dual_range:
+            hits = {radius: [[] for _ in geometries] for radius in (200, 500)}
+            # 每个中文类别只查最近距离：可判定该类别是否在范围内，避免密集区域的全配对爆内存。
+            for label, category_tree in category_trees.items():
+                indices, category_distances = category_tree.query_nearest(
+                    geometries, max_distance=500, return_distance=True, all_matches=False)
+                for parcel, distance in zip(indices[0], category_distances):
+                    for radius in (200, 500):
+                        if distance <= radius:
+                            hits[radius][parcel].append(label)
+            for radius in (200, 500):
+                range_records[radius].extend("、".join(values) for values in hits[radius])
         pairs, distances = tree.query_nearest(geometries, return_distance=True, all_matches=True)
         # 同距离按铁路、公路、村庄排序，然后按输入顺序稳定选择。
         candidates = pd.DataFrame({"parcel": pairs[0], "feature": pairs[1], "distance": distances})
@@ -236,22 +258,15 @@ def analyze(farmland, features, threshold=None, progress=None, chunk_size=5000,
                     description = f"{label}旁"
                 if show_distance and distance > 0.005:
                     description += f"约{distance:.2f}米"
-            if dual_range:
-                for radius in (200, 500):
-                    range_records[radius].append(
-                        (kind, subtype, round(distance, 2), description) if distance <= radius
-                        else ("无", "", None, f"{radius}米内无公路、铁路或村庄")
-                    )
-                if outside_threshold:
-                    kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
+            if dual_range and outside_threshold:
+                kind, subtype, description = "无", "", "不在公路、铁路或村庄周边"
             records.append((kind, subtype, round(distance, 2), description))
         if progress:
             progress(min(start + chunk_size, len(land_m)) / len(land_m))
     result[OUTPUT_FIELDS] = pd.DataFrame(records, columns=OUTPUT_FIELDS, index=result.index)
     if dual_range:
-        for radius in (200, 500):
-            fields = [f"{radius}米{field}" for field in OUTPUT_FIELDS]
-            result[fields] = pd.DataFrame(range_records[radius], columns=fields, index=result.index)
+        for radius in (500, 200):
+            result[f"邻近路网（{radius}米）"] = range_records[radius]
     if center_coords:
         centers = gpd.GeoSeries(land_m.geometry.centroid, crs=metric_crs).to_crs(4326)
         result["中心经度"] = centers.x.round(8).to_numpy()
