@@ -110,6 +110,7 @@ DBF 文本超过 254 字节时不能导出 Shapefile，请使用 GeoJSON。
 with st.expander("第一步：从完整 OSM 数据提取分析材料", expanded=False):
     st.write("上传村界或分析区域面，以及完整 OSM ZIP / GeoJSON。下载的分析材料可直接放入下方“上传 OSM 地物”。")
     st.info("标准 OSM 数据包只需上传 4 类文件：`gis_osm_roads_free_1.shp`（道路）、`gis_osm_railways_free_1.shp`（铁路）、`gis_osm_places_free_1.shp`（村庄点）、`gis_osm_landuse_a_free_1.shp`（居民区面）。每类需连同同名 .shx、.dbf、.prj、.cpg 一起压缩。buildings、natural、water、traffic、transport、pofw、pois 等不需要上传。")
+    st.caption("导出 ZIP 内按点、线、面分别保存 Shapefile；村庄点和居民区面均保留。可直接上传整个 ZIP 分析，无需手动合并图层。")
     st.caption("程序会根据原图层名把 fclass 自动转换为 highway、railway、place、landuse；普通建筑不会当作村庄。")
 
     def clear_materials():

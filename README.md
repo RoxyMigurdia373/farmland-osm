@@ -84,3 +84,6 @@ python -m unittest discover -s tests -v
 ```
 
 测试覆盖分类优先级、最短距离、阈值、并列选择、投影回退、输入错误、中文导出往返及 ZIP 路径安全。
+
+
+Shapefile 导出按几何类型分层：混合数据使用 result_points、result_multipoints、result_lines、result_polygons，均置于同一个 ZIP。村庄点与居民区面不会互相转换或丢弃；整个 ZIP 可直接重新上传分析。单一类型仍使用 result 图层名。

@@ -121,8 +121,19 @@ def export_shapefile(frame):
     output = output.rename(columns=mapping)
     with tempfile.TemporaryDirectory(prefix="farmland_export_") as directory:
         root = Path(directory)
-        output.to_file(root / "result.shp", driver="ESRI Shapefile", encoding="UTF-8", engine="fiona", index=False)
-        (root / "result.cpg").write_text("UTF-8", encoding="ascii")
+        families = {
+            "points": ["Point"], "multipoints": ["MultiPoint"],
+            "lines": ["LineString", "MultiLineString"],
+            "polygons": ["Polygon", "MultiPolygon"],
+        }
+        if output.empty or not output.geom_type.isin(sum(families.values(), [])).all():
+            raise ValueError("导出数据为空或包含不支持的几何类型，请先修复数据。")
+        layers = [(name, output.loc[output.geom_type.isin(types)]) for name, types in families.items()]
+        layers = [(name, layer) for name, layer in layers if not layer.empty]
+        for name, layer in layers:
+            stem = "result" if len(layers) == 1 else f"result_{name}"
+            layer.to_file(root / f"{stem}.shp", driver="ESRI Shapefile", encoding="UTF-8", engine="fiona", index=False)
+            (root / f"{stem}.cpg").write_text("UTF-8", encoding="ascii")
         (root / "字段映射.json").write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
