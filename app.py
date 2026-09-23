@@ -1,8 +1,14 @@
 import logging
+import importlib
 import pandas as pd
 
 import streamlit as st
 
+import analyzer
+
+# Cloud 热更新可能保留上一版本的模块缓存；先刷新再导入新增函数。
+if not all(hasattr(analyzer, name) for name in ("normalize_radii", "range_field")):
+    importlib.reload(analyzer)
 from analyzer import OUTPUT_FIELDS, ROAD_TYPES_ZH, normalize_radii, range_field, analyze, classify_features, summarize, validate_geometry, repair_geometry
 from io_utils import combine_frames, export_geojson, export_shapefile, read_vector
 from materials import extraction_area, normalize_layer, extract_materials
