@@ -37,6 +37,16 @@ S-G为二阶局部最小二乘，默认5点，边缘窗口平移拟合；窗口�
 
 导出当前筛选结果CSV（UTF-8 BOM）：plot_id,year,ndviMax,ndviAmp,ndviMeanGs,peakDoy,className,classCode。Excel的自动格式识别仍可能去掉纯数字ID前导零，使用“数据→从文本/CSV”并将plot_id设为文本。以公式符号开头的ID会在CSV中添加单引号防止执行。阈值JSON可导出、导入；localStorage不可用时页面提示使用JSON。示例覆盖20个ID、2023/2024两年、5种基础类别；开启连续确认可产生第6类。示例为人工模拟，不能作为精度验证数据。
 
+## 标准 GEE Code Editor（推荐）
+
+下载 `gee_code_editor.js`，粘贴到 https://code.earthengine.google.com/ 。只修改顶部矢量Asset导入行和年份；如果已在Imports导入矢量为table，使用 `var plots = table;`。本地SHP需先上传GEE Table Asset，Code Editor不能直接读取电脑路径。
+
+点击Run后，脚本校验面图斑和ID，自动生成按年、每1000图斑一批的Drive任务。在Tasks逐个点击Run，完成后下载 `ndvi_ts_年份_b批次.csv`。网页可同时选择所有这些CSV，自动合并，无需自己处理列名、日期或空值。默认10天合成、SCL云掩膜，CSV固定为plot_id/date/NDVI/valid_pixels/NDVI_std。空时段NDVI为空而不是0；不按面积自动删除小图斑。
+
+优先保留非空唯一plot_id；否则自动使用plot_加system:index，所有年份保持一致。额外生成 `ndvi_ts_id_mapping.csv` 对应原地块属性，仅用于回连原矢量，不要导入NDVI网页；重新上传Asset可能改变自动ID，跨批追加数据应继续使用同一个Asset。影像有效性、配额和导出速度取决于GEE服务，需已授权账号与Cloud项目。代码已做语法检查，未代用户提交真实云端任务。
+
+以下Python版本保留给需要命令行批量执行的技术人员。
+
 ## GEE导出
 
 先准备已启用并注册 Earth Engine 的 Google Cloud 项目、GEE账户及 Drive 权限。GEE环节会把研究区几何发送到Google，不是本机离线处理；网页环节不上传CSV。推荐大数据预先上传为GEE Asset，小矢量可用本地SHP/GeoJSON。Asset的plot_id建议预先设成字符串且唯一。
