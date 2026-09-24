@@ -165,6 +165,9 @@ def render(token):
     spec = st.session_state.get('gee_batch_spec')
     if not spec:
         return
+    if spec.get('algorithm') != 'ndvi-v2-time-preserved':
+        st.warning('算法版本已更新，请重新检查资产生成计划。旧版结果不要用于分析。')
+        return
     if spec.get('excluded_count', 0):
         st.warning(f"原资产{spec['source_count']}条，排除非纯面{spec['excluded_count']}条（点、线、几何集合），本次仅分析{spec['count']}条面。原资产未修改。类型统计：{spec['geometry_types']}")
     current = (project.strip(), asset.strip(), id_field.strip(), int(year), int(size))
