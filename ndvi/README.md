@@ -83,3 +83,9 @@ python -m venv .venv
 
 ## 分类矢量导出
 网站新增“NDVI vector”页面：在工作台导出分类CSV，上传分类CSV及含相同唯一ID的原图斑，选择编号字段和年份，生成WGS84 Shapefile ZIP。多个CSV支持合并，重复图斑年份会拒绝；只导出已匹配图斑，未分析记录不会被赋予分类。关联步骤在Streamlit服务器处理，原有浏览器CSV分析仍在本地完成。输出包含ndvi_year、ndvi_max、ndvi_amp、ndvi_mean、peak_doy、class_name、class_code及字段说明。
+
+
+## 县级批次与当年结果
+批量入口支持当年影像，计划内固定 end_exclusive（UTC，不含该日），不请求未来影像。2026年属于阶段性筛查，当前年度不参加连续两年撂荒确认。纯面任务与几何集合恢复任务分别导出，后者仅提取集合中的面，不对点线加缓冲区。
+
+下载批次后，`node ndvi/classify_batches.js manifest.json results.csv` 按同一浏览器算法逐批分类。manifest 的 batches 数组每项包含 path（CSV路径）和 end_exclusive（例如2026-09-24）。拒绝重复图斑年份、重复日期和超截止日记录；全缺失记录保留为数据不足。`county_vector.assemble_county` 将结果关联回完整原矢量，待处理代码为0，数据不足为5；保留所有几何。任务是否完成与分类是否可靠是两回事，最终结果仍需样点或影像核验。

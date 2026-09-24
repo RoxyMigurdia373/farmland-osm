@@ -212,8 +212,11 @@ def render(token):
             st.session_state.pop('gee_batch_status', None)
         except ValueError as exc:
             st.error(str(exc))
-        except Exception:
-            st.error('资产检查失败：请检查资产路径、读取权限、项目注册和授权有效期。')
+        except Exception as exc:
+            import re
+            detail = str(exc).replace(token, '[令牌隐藏]') if token else str(exc)
+            detail = re.sub(r'https?://\S+', '[请求地址隐藏]', detail)
+            st.error('资产检查失败：' + detail[:1200])
     spec = st.session_state.get('gee_batch_spec')
     if not spec:
         return
