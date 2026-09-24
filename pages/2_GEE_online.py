@@ -108,7 +108,11 @@ if st.button('开始云端提取并分析', disabled=not(upload and project and 
         with st.spinner('GEE计算中，请保持页面打开；不支持关闭网页后的后台续跑。'):
             rows = extract(frame[['plot_id',frame.geometry.name]], project.strip(), st.session_state.gee_token, int(year), st.progress(0).progress)
         st.session_state.gee_csv = pd.DataFrame(rows).reindex(columns=['plot_id','date','NDVI','valid_pixels']).to_csv(index=False)
-    except Exception:
+    except Exception as exc:
+        import re
+        detail = str(exc).replace(st.session_state.get('gee_token', ''), '[令牌隐藏]') if st.session_state.get('gee_token') else str(exc)
+        detail = re.sub(r'https?://\S+', '[请求地址隐藏]', detail)
+        st.error(f'诊断：{type(exc).__name__}: {detail[:1500]}')
         st.error('云端提取失败：请检查项目是否启用Earth Engine、账号权限、授权是否过期或配额。可重新授权后重试；大批量数据请使用标准GEE脚本。')
 if st.session_state.get('gee_mapping'):
     st.download_button('下载图斑ID对应表', st.session_state.gee_mapping, 'plot_id_mapping.csv', 'text/csv')
