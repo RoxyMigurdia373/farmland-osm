@@ -194,6 +194,17 @@ def render(token):
     if project.strip() == 'sa-2-496905':
         st.caption('配额核查快照（2026-09-24）：非商业月额度540000 EECU秒，当时已用7662；用量会变化，请以Google控制台为准。图斑数不能直接换算为EECU。先试跑少量批次。')
     st.caption('提交期间请保持资产内容不变。ID必须非空且唯一；分批依据ID排序。15万块一年约555万行，结果请逐批分析，不要全部加载到浏览器。')
+    if st.button('查看本账号近期NDVI任务'):
+        try:
+            with connection(project.strip(), token) as ee:
+                recent = ee.data.getTaskList()
+            recent = [t for t in recent if t.get('description', '').startswith('ndvi_')]
+            from collections import Counter
+            st.write('账号任务统计：' + str(dict(Counter(t.get('state') for t in recent))))
+            for t in recent:
+                st.text(f"{t.get('description')} | {t.get('state')} | {t.get('error_message', '')}")
+        except Exception:
+            st.error('近期任务读取失败，请检查授权或稍后重试。')
     if st.button('检查资产并生成批次计划'):
         try:
             with st.spinner('检查资产数量与唯一ID…'):
