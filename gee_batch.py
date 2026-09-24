@@ -36,21 +36,28 @@ def ranges(count, batch_size):
     return [(i, min(batch_size, count-i)) for i in range(0, count, batch_size)]
 
 
+def polygon_assets(ee, plots):
+    return plots.map(lambda f: f.set('_geometry_type_check', f.geometry().type())).filter(
+        ee.Filter.inList('_geometry_type_check', ['Polygon', 'MultiPolygon']))
+
+
 def inspect_asset(project, token, asset, id_field, year, batch_size):
     if not asset.strip() or not id_field.strip():
         raise ValueError('请填写GEE表格资产路径和唯一ID字段。')
     with connection(project, token) as ee:
         plots = ee.FeatureCollection(asset)
+        source_count = plots.size().getInfo()
+        ranges(source_count, batch_size)
+        geometry_types = plots.map(lambda f: f.set('_geometry_type_check', f.geometry().type())).aggregate_histogram('_geometry_type_check').getInfo()
+        plots = polygon_assets(ee, plots)
         count = plots.size().getInfo()
         plan = ranges(count, batch_size)
         valid = plots.filter(ee.Filter.notNull([id_field])).filter(ee.Filter.neq(id_field, '')).size().getInfo()
         distinct = plots.aggregate_count_distinct(id_field).getInfo()
-        geometry_types = plots.map(lambda f: f.set('_geometry_type_check', f.geometry().type())).aggregate_histogram('_geometry_type_check').getInfo()
-        if not set(geometry_types).issubset({'Polygon', 'MultiPolygon'}):
-            raise ValueError(f'耕地图斑资产必须全部为Polygon或MultiPolygon面几何。实际类型：{geometry_types}')
         if valid != count or distinct != count:
             raise ValueError('所选ID字段存在空值或重复值，请选择唯一且非空的ID字段。')
-    spec = dict(project=project, asset=asset, id_field=id_field, year=int(year), batch_size=int(batch_size), count=count)
+    spec = dict(project=project, asset=asset, id_field=id_field, year=int(year), batch_size=int(batch_size), count=count,
+                source_count=source_count, excluded_count=source_count-count, geometry_types=geometry_types)
     spec['job_id'] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:16]
     spec['batches'] = [{'index': i, 'offset': offset, 'count': size,
                         'description': f"ndvi_{spec['job_id']}_{i:05d}"}
@@ -114,7 +121,7 @@ def submit(spec, token, limit=5, retry=False):
     with connection(spec['project'], token) as ee:
         tasks = ee.data.getTaskList()
         batches = select_batches(spec, tasks, limit, retry)
-        plots = ee.FeatureCollection(spec['asset']).sort(spec['id_field'])
+        plots = polygon_assets(ee, ee.FeatureCollection(spec['asset'])).sort(spec['id_field'])
         if plots.size().getInfo() != spec['count']:
             raise ValueError('资产图斑数量已改变，请重新检查并生成计划。')
         for batch in batches:
@@ -158,6 +165,8 @@ def render(token):
     spec = st.session_state.get('gee_batch_spec')
     if not spec:
         return
+    if spec.get('excluded_count', 0):
+        st.warning(f"原资产{spec['source_count']}条，排除非纯面{spec['excluded_count']}条（点、线、几何集合），本次仅分析{spec['count']}条面。原资产未修改。类型统计：{spec['geometry_types']}")
     current = (project.strip(), asset.strip(), id_field.strip(), int(year), int(size))
     expected = (spec['project'], spec['asset'], spec['id_field'], spec['year'], spec['batch_size'])
     if current != expected:
