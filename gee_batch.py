@@ -11,6 +11,17 @@ PENDING_LIMIT = 20  # Conservative app guard, not a claim about the project's qu
 ACTIVE = {'READY', 'RUNNING', 'CANCEL_REQUESTED'}
 
 
+def analysis_window(year, end_exclusive=None, today=None):
+    """Freeze the available period; never request future observations."""
+    today = today or datetime.datetime.now(datetime.timezone.utc).date()
+    start = datetime.date(int(year), 1, 1)
+    annual_end = datetime.date(int(year)+1, 1, 1)
+    end = datetime.date.fromisoformat(end_exclusive) if end_exclusive else min(annual_end, today)
+    if year < 2017 or not start < end <= min(annual_end, today):
+        raise ValueError('分析时间范围无效，不能分析未来日期。')
+    return start, end, end < annual_end
+
+
 @contextlib.contextmanager
 def connection(project, token):
     import ee
@@ -42,6 +53,7 @@ def polygon_assets(ee, plots):
 
 
 def inspect_asset(project, token, asset, id_field, year, batch_size):
+    _, cutoff, provisional = analysis_window(year)
     if not asset.strip() or not id_field.strip():
         raise ValueError('请填写GEE表格资产路径和唯一ID字段。')
     with connection(project, token) as ee:
@@ -58,6 +70,9 @@ def inspect_asset(project, token, asset, id_field, year, batch_size):
             raise ValueError('所选ID字段存在空值或重复值，请选择唯一且非空的ID字段。')
     spec = dict(project=project, asset=asset, id_field=id_field, year=int(year), batch_size=int(batch_size), count=count,
                 source_count=source_count, excluded_count=source_count-count, geometry_types=geometry_types, algorithm='ndvi-v2-time-preserved')
+    # Keep completed-year plan IDs stable so existing exports are not repeated.
+    if provisional:
+        spec.update(end_exclusive=cutoff.isoformat(), provisional=True)
     spec['job_id'] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:16]
     spec['batches'] = [{'index': i, 'offset': offset, 'count': size,
                         'description': f"ndvi_{spec['job_id']}_{i:05d}"}
@@ -65,15 +80,16 @@ def inspect_asset(project, token, asset, id_field, year, batch_size):
     return spec
 
 
-def annual_table(ee, plots, year, id_field):
-    start, end = ee.Date.fromYMD(year, 1, 1), ee.Date.fromYMD(year+1, 1, 1)
+def annual_table(ee, plots, year, id_field, end_exclusive=None):
+    first, cutoff, _ = analysis_window(year, end_exclusive)
+    start, end = ee.Date(first.isoformat()), ee.Date(cutoff.isoformat())
     def ndvi(image):
         scl = image.select('SCL')
         mask = scl.neq(0).And(scl.neq(1)).And(scl.neq(3)).And(scl.neq(8)).And(scl.neq(9)).And(scl.neq(10)).And(scl.neq(11))
         nir, red = image.select('B8').multiply(.0001), image.select('B4').multiply(.0001)
         return nir.subtract(red).divide(nir.add(red)).updateMask(mask.And(nir.add(red).neq(0))).rename('NDVI').copyProperties(image, ['system:time_start'])
     images = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').filterBounds(plots.geometry()).filterDate(start, end).filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 60)).map(ndvi)
-    days = (datetime.date(year+1, 1, 1)-datetime.date(year, 1, 1)).days
+    days = (cutoff-first).days
     def period(day):
         date = start.advance(day, 'day')
         subset = images.filterDate(date, ee.Date(date.advance(10, 'day').millis().min(end.millis())))
@@ -128,7 +144,7 @@ def submit(spec, token, limit=5, retry=False):
             try:
                 chunk = ee.FeatureCollection(plots.toList(batch['count'], batch['offset']))
                 task = ee.batch.Export.table.toDrive(
-                    collection=annual_table(ee, chunk, spec['year'], spec['id_field']),
+                    collection=annual_table(ee, chunk, spec['year'], spec['id_field'], spec.get('end_exclusive')),
                     description=batch['description'], folder=f"ndvi_{spec['job_id']}",
                     fileNamePrefix=batch['description'], fileFormat='CSV',
                     selectors=['plot_id', 'date', 'NDVI', 'valid_pixels'])
@@ -148,7 +164,9 @@ def render(token):
     project = st.text_input('批量任务项目ID', value='sa-2-496905')
     asset = st.text_input('GEE表格资产路径', placeholder='projects/项目ID/assets/耕地图斑')
     id_field = st.text_input('唯一ID字段', value='system:index')
-    year = st.number_input('批量分析年份', 2017, datetime.date.today().year-1, datetime.date.today().year-1)
+    year = st.number_input('批量分析年份', 2017, datetime.date.today().year, datetime.date.today().year-1)
+    if year == datetime.date.today().year:
+        st.warning('当年仅分析截至当前UTC日期之前的可用影像，结果为阶段性筛查，不能据此确认全年未种植或撂荒。')
     size = st.number_input('每批图斑数', 100, 2000, 1000, 100)
     if project.strip() == 'sa-2-496905':
         st.caption('配额核查快照（2026-09-24）：非商业月额度540000 EECU秒，当时已用7662；用量会变化，请以Google控制台为准。图斑数不能直接换算为EECU。先试跑少量批次。')
@@ -176,6 +194,8 @@ def render(token):
         st.warning('参数已修改，请重新检查资产生成计划后提交。')
         return
     st.write(f"计划：{spec['count']:,} 个图斑，{len(spec['batches'])} 批，年份 {spec['year']}。Drive文件夹：ndvi_{spec['job_id']}")
+    if spec.get('provisional'):
+        st.caption(f"年度未完整；固定截止日期（不含）：{spec['end_exclusive']}。实际有效观测以CSV非空记录为准。")
     st.download_button('下载批次计划JSON', json.dumps(spec, ensure_ascii=False, indent=2), f"ndvi_{spec['job_id']}_plan.json", 'application/json')
     accepted = st.checkbox('同意由GEE后台计算该资产，并将分批结果导出到我的Google Drive')
     limit = st.number_input('本次提交批次数', 1, 10, 5)

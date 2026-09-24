@@ -1,7 +1,22 @@
 import unittest
-from gee_batch import ranges, select_batches, task_index
+import datetime
+from gee_batch import ranges, select_batches, task_index, analysis_window
 
 class BatchTests(unittest.TestCase):
+    def test_fixed_partial_year_and_leap_year(self):
+        today = datetime.date(2026, 9, 24)
+        start, end, partial = analysis_window(2026, today=today)
+        self.assertEqual(end, today)
+        self.assertTrue(partial)
+        self.assertEqual(len(range(0, (end-start).days, 10)), 27)
+        start, end, partial = analysis_window(2024, today=today)
+        self.assertEqual((end-start).days, 366)
+        self.assertFalse(partial)
+        self.assertEqual(analysis_window(2026, '2026-08-01', today)[1], datetime.date(2026, 8, 1))
+        for year, cutoff in [(2027, None), (2026, '2026-09-25'), (2026, '2026-01-01')]:
+            with self.assertRaises(ValueError):
+                analysis_window(year, cutoff, today)
+
     def test_150k_partition_without_loss(self):
         batches = ranges(150000, 1000)
         self.assertEqual(len(batches), 150)
