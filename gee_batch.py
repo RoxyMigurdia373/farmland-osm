@@ -57,7 +57,7 @@ def inspect_asset(project, token, asset, id_field, year, batch_size):
         if valid != count or distinct != count:
             raise ValueError('所选ID字段存在空值或重复值，请选择唯一且非空的ID字段。')
     spec = dict(project=project, asset=asset, id_field=id_field, year=int(year), batch_size=int(batch_size), count=count,
-                source_count=source_count, excluded_count=source_count-count, geometry_types=geometry_types)
+                source_count=source_count, excluded_count=source_count-count, geometry_types=geometry_types, algorithm='ndvi-v2-time-preserved')
     spec['job_id'] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()[:16]
     spec['batches'] = [{'index': i, 'offset': offset, 'count': size,
                         'description': f"ndvi_{spec['job_id']}_{i:05d}"}
@@ -71,7 +71,7 @@ def annual_table(ee, plots, year, id_field):
         scl = image.select('SCL')
         mask = scl.neq(0).And(scl.neq(1)).And(scl.neq(3)).And(scl.neq(8)).And(scl.neq(9)).And(scl.neq(10)).And(scl.neq(11))
         nir, red = image.select('B8').multiply(.0001), image.select('B4').multiply(.0001)
-        return nir.subtract(red).divide(nir.add(red)).updateMask(mask.And(nir.add(red).neq(0))).rename('NDVI')
+        return nir.subtract(red).divide(nir.add(red)).updateMask(mask.And(nir.add(red).neq(0))).rename('NDVI').copyProperties(image, ['system:time_start'])
     images = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').filterBounds(plots.geometry()).filterDate(start, end).filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 60)).map(ndvi)
     days = (datetime.date(year+1, 1, 1)-datetime.date(year, 1, 1)).days
     def period(day):
