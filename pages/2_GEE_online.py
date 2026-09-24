@@ -7,7 +7,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
-from gee_online import authorization, exchange, extract
+import gee_online
+import importlib
+if not hasattr(gee_online, 'validate_config'):
+    importlib.reload(gee_online)
+from gee_online import authorization, exchange, extract, validate_config
 from io_utils import read_vector
 from analyzer import repair_geometry, validate_geometry
 
@@ -24,6 +28,20 @@ if not all(config.get(k) for k in required):
     st.warning('管理员尚未配置Google OAuth，此入口暂不可登录。现有NDVI工作台可继续使用。')
     st.markdown('请管理员按 GitHub 仓库 GEE_ONLINE_SETUP.md 配置后启用。用户无需提供密码或自行复制授权令牌。')
     st.stop()
+try:
+    config = validate_config(config)
+except ValueError as exc:
+    st.error(str(exc))
+    st.caption('管理员请在Streamlit Secrets中修正配置；不要在聊天或GitHub中公开密钥。')
+    st.stop()
+
+# Discard old authorization URLs after the administrator changes client settings.
+config_version = __import__('hashlib').sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+if st.session_state.get('gee_config_version') != config_version:
+    for key in list(st.session_state):
+        if key.startswith('gee_'):
+            del st.session_state[key]
+    st.session_state.gee_config_version = config_version
 
 if st.button('退出授权 / 清除本会话数据'):
     for key in list(st.session_state):
@@ -49,6 +67,8 @@ if 'code' in callback:
             st.session_state.pop('gee_state', None)
             st.query_params.clear()
             st.success('授权成功。')
+        except ValueError as exc:
+            st.error(str(exc))
         except Exception:
             st.error('授权失败或已过期，请重新发起登录。')
     else:

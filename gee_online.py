@@ -3,6 +3,7 @@ import base64
 import hashlib
 import json
 import secrets
+import re
 import threading
 from urllib.parse import urlencode
 
@@ -13,7 +14,19 @@ SCOPES = ['https://www.googleapis.com/auth/earthengine',
 LOCK = threading.Lock()
 
 
+def validate_config(config):
+    cleaned = {k: str(v).strip() for k, v in config.items()}
+    if not re.fullmatch(r'[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com', cleaned.get('client_id', '')):
+        raise ValueError('OAuth客户端ID格式不正确：请填写Google Cloud中“Web应用”的客户端ID（以.apps.googleusercontent.com结尾），不能填写项目ID、API Key或示例文字。')
+    if not cleaned.get('client_secret') or cleaned['client_secret'] in ['Google OAuth客户端密钥', 'YOUR_CLIENT_SECRET']:
+        raise ValueError('请填写与该Web客户端ID配套的客户端密钥，不能使用示例文字。')
+    if cleaned.get('redirect_uri') != 'https://farmland-osm-roxy.streamlit.app/GEE_online':
+        raise ValueError('redirect_uri必须设置为https://farmland-osm-roxy.streamlit.app/GEE_online，并在Google客户端中登记相同网址。')
+    return cleaned
+
+
 def authorization(config):
+    config = validate_config(config)
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
@@ -27,12 +40,19 @@ def authorization(config):
 
 
 def exchange(config, code, verifier):
+    config = validate_config(config)
     response = requests.post('https://oauth2.googleapis.com/token', data={
         'client_id': config['client_id'], 'client_secret': config['client_secret'],
         'redirect_uri': config['redirect_uri'], 'code': code,
         'code_verifier': verifier, 'grant_type': 'authorization_code',
     }, timeout=30)
     if not response.ok:
+        try:
+            error = response.json().get('error')
+        except ValueError:
+            error = None
+        if error == 'invalid_client':
+            raise ValueError('Google拒绝OAuth客户端：请检查Web客户端是否仍存在，以及client_id与client_secret是否来自同一个客户端。')
         raise ValueError('Google授权交换失败，请重新登录并核对回调网址。')
     return response.json()['access_token']
 
