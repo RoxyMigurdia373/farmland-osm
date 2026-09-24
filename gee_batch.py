@@ -247,6 +247,11 @@ def render(token):
     rows = st.session_state.get('gee_batch_status')
     if rows:
         import pandas as pd
+        counts = pd.Series([row['state'] for row in rows]).value_counts().to_dict()
+        st.write('任务统计：' + '；'.join(f'{name} {number}' for name, number in counts.items()))
+        for row in rows:
+            if row.get('error'):
+                st.error(f"批次{row['index']}：{row['error']}")
         st.dataframe(pd.DataFrame(rows), hide_index=True)
         st.download_button('下载任务状态CSV', pd.DataFrame(rows).to_csv(index=False).encode('utf-8-sig'), 'ndvi_tasks.csv', 'text/csv')
         st.caption('COMPLETED：已导出；READY/RUNNING：排队/计算中；FAILED：失败；NOT_SUBMITTED：未提交。每份结果CSV可直接导入NDVI工作台。')
