@@ -88,7 +88,7 @@ def extract(frame, project, token, year, progress):
             blank = ee.Image.constant(0).rename('NDVI').updateMask(ee.Image.constant(0))
             composite = ee.Image(ee.Algorithms.If(subset.size().gt(0), subset.median(), blank))
             reducer = ee.Reducer.mean().combine(ee.Reducer.count(), sharedInputs=True)
-            output = composite.reduceRegions(collection=plots, reducer=reducer, scale=10, crs='EPSG:6933', tileScale=4)
+            output = composite.reduceRegions(collection=plots, reducer=reducer, scale=10, crs='EPSG:4326', tileScale=4)
             output = output.map(lambda f: ee.Feature(None, {'plot_id': f.get('plot_id'), 'date': date.format('YYYY-MM-dd'), 'NDVI': f.get('mean'), 'valid_pixels': f.get('count')}))
             records.extend(f['properties'] for f in output.getInfo()['features'])
             progress(min((day+10)/days, 1))

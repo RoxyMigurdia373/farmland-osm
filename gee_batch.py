@@ -73,7 +73,7 @@ def annual_table(ee, plots, year, id_field):
         blank = ee.Image.constant(0).rename('NDVI').updateMask(ee.Image.constant(0))
         composite = ee.Image(ee.Algorithms.If(subset.size().gt(0), subset.median(), blank))
         reducer = ee.Reducer.mean().combine(ee.Reducer.count(), sharedInputs=True)
-        output = composite.reduceRegions(collection=plots, reducer=reducer, scale=10, crs='EPSG:6933', tileScale=4)
+        output = composite.reduceRegions(collection=plots, reducer=reducer, scale=10, crs='EPSG:4326', tileScale=4)
         return output.map(lambda f: ee.Feature(None, {'plot_id': f.get(id_field), 'date': date.format('YYYY-MM-dd'), 'NDVI': f.get('mean'), 'valid_pixels': f.get('count')}))
     return ee.FeatureCollection(ee.List.sequence(0, days-1, 10).map(period)).flatten()
 

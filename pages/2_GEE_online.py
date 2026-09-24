@@ -9,7 +9,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 import gee_online
 import importlib
-if not hasattr(gee_online, 'validate_config'):
+if True:  # Refresh extraction helpers after Streamlit Cloud hot updates.
     importlib.reload(gee_online)
 from gee_online import authorization, exchange, extract, validate_config
 from io_utils import read_vector
