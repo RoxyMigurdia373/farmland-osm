@@ -11,6 +11,8 @@ const data=N.parse(N.example()),base=data.groups.map(g=>N.preprocess(g,c)).filte
 assert.equal(new Set(data.groups.map(g=>g.id)).size,20);assert.deepEqual([...new Set(results.map(r=>r.classCode))].sort(),[1,2,3,4,5]);
 assert.ok(N.classifyAll(base,{...c,confirm:true}).some(r=>r.classCode===6));
 const gaps=[{...r,id:'a',year:2020,ndviAmp:.1},{...r,id:'a',year:2022,ndviAmp:.1}];assert.ok(N.classifyAll(gaps,{...c,confirm:true}).every(r=>r.classCode===3));
+const nowYear=new Date().getUTCFullYear();
+assert.ok(N.classifyAll([{...r,id:'b',year:nowYear-1,ndviAmp:.1},{...r,id:'b',year:nowYear,ndviAmp:.1}],{...c,confirm:true}).every(r=>r.classCode===3));
 const missing=N.parse('plot_id,date,NDVI\na,2024-04-01,\na,2024-05-01,NaN');assert.equal(N.preprocess(missing.groups[0],c),null);
 const sparse=N.parse('plot_id,date,NDVI\na,2024-01-01,.2\na,2024-12-31,.8');assert.ok(N.preprocess(sparse.groups[0],c).insufficient);
 fs.writeFileSync(__dirname+'/example_20plots.csv','\uFEFF'+N.example());

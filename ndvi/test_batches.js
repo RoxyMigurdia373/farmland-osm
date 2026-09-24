@@ -1,0 +1,11 @@
+const assert = require('node:assert/strict');
+const {classifyBatch}=require('./classify_batches.js');
+const header='plot_id,date,NDVI\n';
+const empty=classifyBatch(header+'001,2026-04-01,\n001,2026-04-11,\n','2026-09-24')[0];
+assert.equal(empty.plot_id,'001'); assert.equal(empty.classCode,5);
+assert.equal(empty.valid_obs,0); assert.equal(empty.provisional,true);
+assert.throws(()=>classifyBatch(header+'a,2026-09-24,.5\n','2026-09-24'));
+assert.throws(()=>classifyBatch(header+'a,2025-04-01,.5\na,2025-04-01,.6\n','2026-01-01'));
+const stable=classifyBatch(header+Array.from({length:8},(_,i)=>`a,2025-${String(i+3).padStart(2,'0')}-01,.6`).join('\n'),'2026-01-01')[0];
+assert.equal(stable.classCode,3); assert.equal(stable.provisional,false);
+console.log('Batch classification checks passed');

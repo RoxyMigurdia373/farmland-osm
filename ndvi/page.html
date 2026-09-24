@@ -28,7 +28,7 @@ function explain(r){
  const reasons={1:'峰值、生长变化和峰值时期符合当前水稻候选规则',2:'存在生长变化，但未满足当前水稻候选规则',3:'植被变化幅度较小；常绿植被等也可能出现类似曲线',4:'植被峰值或生长季均值较低；裸地、水面或残余云也可能造成低值',5:'有效观测不足或生长季缺少真实观测',6:'连续年度满足疑似未种植或撂荒规则，仍需影像或现场核验'};
  const gaps=r.points.slice(1).map((p,i)=>(p.t-r.points[i].t)/NDVI.DAY);
  const maxGap=gaps.reduce((a,b)=>Math.max(a,b),0);
- return {...r,reason:reasons[r.classCode],review:r.insufficient?'补充有效影像观测':maxGap>60?'存在超过60天缺测，优先复核':r.classCode===1?'核实作物类型':'结合影像或实地复核'};
+ return {...r,reason:reasons[r.classCode],review:r.year>=new Date().getUTCFullYear()?'年度未完整，仅阶段性判断，不能确认全年撂荒或未种植':r.insufficient?'补充有效影像观测':maxGap>60?'存在超过60天缺测，优先复核':r.classCode===1?'核实作物类型':'结合影像或实地复核'};
 }
 function reclassify(){results=NDVI.classifyAll(base,cfg).map(explain);page=0;options();render();}
 $('run').onclick=analyze;$('reset').onclick=()=>{cfg={...NDVI.defaults};paintConfig();store();analyze();};$('save').onclick=()=>{store();$('notice').textContent='配置已保存到当前浏览器。';};$('load').onclick=()=>{try{cfg=NDVI.validate(JSON.parse(localStorage.getItem('ndvi_config')||'{}'));paintConfig();analyze();}catch(e){$('notice').textContent=e.message;}};$('configExport').onclick=()=>download('ndvi_config.json',JSON.stringify(cfg,null,2),'application/json');$('configFile').onchange=async e=>{try{cfg=NDVI.validate(JSON.parse(await e.target.files[0].text()));paintConfig();store();analyze();}catch(e){$('notice').textContent='配置读取失败：'+e.message;}};
