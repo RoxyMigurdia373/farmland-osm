@@ -47,7 +47,7 @@ def inspect_asset(project, token, asset, id_field, year, batch_size):
         distinct = plots.aggregate_count_distinct(id_field).getInfo()
         geometry_types = plots.map(lambda f: f.set('_geometry_type_check', f.geometry().type())).aggregate_histogram('_geometry_type_check').getInfo()
         if not set(geometry_types).issubset({'Polygon', 'MultiPolygon'}):
-            raise ValueError('耕地图斑资产必须全部为Polygon或MultiPolygon面几何。')
+            raise ValueError(f'耕地图斑资产必须全部为Polygon或MultiPolygon面几何。实际类型：{geometry_types}')
         if valid != count or distinct != count:
             raise ValueError('所选ID字段存在空值或重复值，请选择唯一且非空的ID字段。')
     spec = dict(project=project, asset=asset, id_field=id_field, year=int(year), batch_size=int(batch_size), count=count)

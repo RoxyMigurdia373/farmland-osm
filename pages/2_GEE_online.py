@@ -84,8 +84,9 @@ if 'gee_token' not in st.session_state:
 
 mode = st.radio('处理方式', ['小范围直接分析（100图斑）', '大批量后台导出（15万图斑）'], horizontal=True)
 if mode == '大批量后台导出（15万图斑）':
-    from gee_batch import render
-    render(st.session_state.gee_token)
+    import gee_batch
+    importlib.reload(gee_batch)
+    gee_batch.render(st.session_state.gee_token)
     st.stop()
 
 project = st.text_input('已注册 Earth Engine 的 Google Cloud 项目 ID', value=config.get('default_project',''))
