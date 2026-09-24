@@ -60,7 +60,7 @@ def collection_polygons(ee, plots):
         components = ee.FeatureCollection(f.geometry().geometries().map(
             lambda g: ee.Feature(ee.Geometry(g)).set('_type', ee.Geometry(g).type())))
         polygons = components.filter(ee.Filter.inList('_type', ['Polygon', 'MultiPolygon']))
-        return f.set('_parts', polygons.toList(polygons.size())).set('_part_count', polygons.size())
+        return f.set('_parts', polygons.toList(polygons.size().max(1))).set('_part_count', polygons.size())
     candidates = collections.map(parts).filter(ee.Filter.gt('_part_count', 0))
     return candidates.map(lambda f: ee.Feature(ee.FeatureCollection(ee.List(f.get('_parts'))).geometry(),
         f.toDictionary(f.propertyNames().removeAll(['_parts', '_part_count', '_geometry_type_check']))))
