@@ -18,7 +18,7 @@ from analyzer import repair_geometry, validate_geometry
 st.set_page_config(page_title='在线GEE试验', page_icon='🛰️', layout='wide')
 st.title('在线 GEE 分析 · 试验版')
 st.write('Google授权 → 上传耕地矢量 → 提取NDVI → 自动进入分类工作台')
-st.info('每次最多100个图斑、1个完整年份。矢量会由网站服务器发送至Google Earth Engine；CSV结果在当前会话内返回。现有空间分析和CSV分析入口仍可单独使用。')
+st.info('直接上传支持100个图斑；大批量入口支持最多15万图斑的GEE资产分批后台导出，每次分析1年。现有空间分析和CSV分析入口仍可单独使用。')
 try:
     config = dict(st.secrets['gee_oauth'])
 except (KeyError, FileNotFoundError):
@@ -81,6 +81,12 @@ if 'gee_token' not in st.session_state:
         st.session_state.update(gee_auth_url=url, gee_state=state, gee_verifier=verifier, gee_auth_time=time.time())
     if st.session_state.get('gee_auth_url'):
         st.link_button('前往 Google 授权', st.session_state.gee_auth_url)
+    st.stop()
+
+mode = st.radio('处理方式', ['小范围直接分析（100图斑）', '大批量后台导出（15万图斑）'], horizontal=True)
+if mode == '大批量后台导出（15万图斑）':
+    from gee_batch import render
+    render(st.session_state.gee_token)
     st.stop()
 
 project = st.text_input('已注册 Earth Engine 的 Google Cloud 项目 ID', value=config.get('default_project',''))
