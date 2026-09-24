@@ -1,0 +1,17 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),N=require('./core.js');
+assert.ok(Number.isNaN(N.date('2023-02-29')));assert.equal(N.date('2024/02/29'),Date.UTC(2024,1,29));
+assert.deepEqual(N.csv('\uFEFFplot_id,date,NDVI\r\n"a,b",2024-01-01,0.5')[1],['a,b','2024-01-01','0.5']);
+assert.throws(()=>N.parse('plot_id,NDVI\na,.4'),/date/);
+assert.deepEqual(N.interpolate([{t:0,v:0},{t:10,v:1}],[-1,0,5,10,11]),[null,0,.5,1,null]);
+const poly=Array.from({length:15},(_,i)=>.2+.01*i+.001*i*i);N.smooth(poly,7).forEach((v,i)=>assert.ok(Math.abs(v-poly[i])<1e-9));
+assert.deepEqual(N.smooth([1,2,3],7),[1,2,3]);
+const c=N.defaults,r={insufficient:false,ndviMax:.7,ndviAmp:.5,ndviMeanGs:.45,peakDoy:220};
+assert.equal(N.classify(r,c),1);assert.equal(N.classify({...r,peakDoy:100},c),2);assert.equal(N.classify({...r,ndviAmp:.1},c),3);assert.equal(N.classify({...r,ndviMax:.4},c),4);assert.equal(N.classify({...r,insufficient:true},c),5);
+const data=N.parse(N.example()),base=data.groups.map(g=>N.preprocess(g,c)).filter(Boolean),results=N.classifyAll(base,c);
+assert.equal(new Set(data.groups.map(g=>g.id)).size,20);assert.deepEqual([...new Set(results.map(r=>r.classCode))].sort(),[1,2,3,4,5]);
+assert.ok(N.classifyAll(base,{...c,confirm:true}).some(r=>r.classCode===6));
+const gaps=[{...r,id:'a',year:2020,ndviAmp:.1},{...r,id:'a',year:2022,ndviAmp:.1}];assert.ok(N.classifyAll(gaps,{...c,confirm:true}).every(r=>r.classCode===3));
+const missing=N.parse('plot_id,date,NDVI\na,2024-04-01,\na,2024-05-01,NaN');assert.equal(N.preprocess(missing.groups[0],c),null);
+const sparse=N.parse('plot_id,date,NDVI\na,2024-01-01,.2\na,2024-12-31,.8');assert.ok(N.preprocess(sparse.groups[0],c).insufficient);
+fs.writeFileSync(__dirname+'/example_20plots.csv','\uFEFF'+N.example());
+const many=Array.from({length:1000},(_,i)=>({...data.groups[i%data.groups.length],id:String(i)}));let t=performance.now();const b=many.map(g=>N.preprocess(g,c));const prep=performance.now()-t;t=performance.now();N.classifyAll(b,c);const cls=performance.now()-t;assert.ok(prep<30000);assert.ok(cls<1000);console.log(JSON.stringify({tests:'passed',sampleClasses:[...new Set(results.map(r=>r.className))],preprocessing1000Ms:prep,classification1000Ms:cls}));
