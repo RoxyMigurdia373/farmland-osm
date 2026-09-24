@@ -11,7 +11,8 @@ import requests
 
 SCOPES = ['https://www.googleapis.com/auth/earthengine',
           'https://www.googleapis.com/auth/cloud-platform']
-LOCK = threading.Lock()
+if 'LOCK' not in globals():
+    LOCK = threading.Lock()
 
 
 def validate_config(config):
