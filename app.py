@@ -14,6 +14,10 @@ from io_utils import combine_frames, export_geojson, export_shapefile, read_vect
 from materials import extraction_area, normalize_layer, extract_materials
 
 st.set_page_config(page_title="耕地地块周边地物分析工具", page_icon="🌾", layout="wide")
+from pathlib import Path as _ThemePath
+_theme = _ThemePath(__file__).resolve().parent / "style.css"
+if _theme.is_file():
+    st.markdown("<style>" + _theme.read_text(encoding="utf-8") + "</style>", unsafe_allow_html=True)
 st.title("耕地地块周边地物分析工具")
 st.caption("离线空间分析 · 无需地图服务 · 距离单位：米")
 st.info("本地运行时文件保留在本机；使用云端部署时，上传文件由该服务器处理。不会调用第三方地图服务。")
@@ -22,6 +26,13 @@ st.info("本地运行时文件保留在本机；使用云端部署时，上传�
 def clear_result():
     st.session_state.pop("analysis_result", None)
 
+
+from vector_workspace import render_vector_workspace
+
+workspace = st.sidebar.radio("工作区", ["耕地周边分析", "矢量字段配色"])
+if workspace == "矢量字段配色":
+    render_vector_workspace()
+    st.stop()
 
 with st.sidebar:
     st.header("分析设置")
@@ -51,6 +62,10 @@ with st.sidebar:
     auto_repair = st.checkbox("自动修复无效几何", value=True, on_change=clear_result)
     st.caption("尝试修复自相交等问题；空几何和无法修复的记录会跳过，不进入结果。修复可能改变形状，请复核处理明细。")
 
+st.link_button("下载中国 OSM 路网数据（Geofabrik）", "https://download.geofabrik.de/asia/china.html")
+st.caption("点击后在浏览器打开；也可复制下方网址访问：")
+st.code("https://download.geofabrik.de/asia/china.html", language=None)
+st.caption("可进入省级页面获取数据。请下载 Shapefile ZIP 并选用道路图层；本工具不直接读取 .osm.pbf。若道路图层只有 fclass 字段，请按下方说明转换为 highway 字段。数据来源：© OpenStreetMap contributors，遵循 ODbL。")
 st.caption("上传耕地图斑和周边地物，点击“开始分析”。首次使用可展开下方说明。")
 with st.expander("使用说明 · 数据要求与分类规则", expanded=False):
     input_tab, class_tab, result_tab = st.tabs(["文件与字段要求", "道路分类对照", "分析与结果规则"])
@@ -94,7 +109,7 @@ ZIP 可含子目录或多套图层，程序会合并。单文件上传上限 500
         st.dataframe(pd.DataFrame([
             {"道路类别": value, "对应 highway 值": "、".join(keys)}
             for value, keys in grouped_types.items()
-        ]), hide_index=True, width="stretch", height=420)
+        ]), hide_index=True, use_container_width=True, height=420)
         st.caption("未列出的 highway 值统一表述为“公路”。这是本项目的名称映射，不是对国道、省道或公路技术等级的法定认定。")
     with result_tab:
         st.markdown("""
@@ -262,9 +277,9 @@ if "analysis_result" in st.session_state:
             st.download_button("下载几何处理明细 CSV", pd.DataFrame(saved["repair_issues"]).to_csv(index=False).encode("utf-8-sig"),
                                "geometry_report.csv", "text/csv")
     st.subheader("分类统计")
-    st.dataframe(saved["summary"], hide_index=True, width="stretch")
+    st.dataframe(saved["summary"], hide_index=True, use_container_width=True)
     st.subheader("属性预览（前 100 行）")
-    st.dataframe(saved["preview"], hide_index=True, width="stretch")
+    st.dataframe(saved["preview"], hide_index=True, use_container_width=True)
     col1, col2 = st.columns(2)
     with col1:
         st.download_button("下载 GeoJSON", saved["geojson"], "farmland_result.geojson", "application/geo+json")
